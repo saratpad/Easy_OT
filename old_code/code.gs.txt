@@ -1,0 +1,2545 @@
+// ====================================================================
+// ==================== การตั้งค่าหลัก (Main Settings) ====================
+// ====================================================================
+
+const SHEET_ID = '1W8ziRoUA2jC_QR-NEKFGUfme6TwQr3HP7hxShbTvc_k';
+const USER_SHEET_NAME = 'tb_User';
+const OVERTIME_REQUEST_SHEET_NAME = 'tb_OverTimeRequest';
+const TASK_SHEET_NAME = 'tb_Tasks'; 
+const HOLIDAY_SHEET_NAME = 'tb_Holidays';
+const TEMPLATE_DOC_ID = '1brvC_2scJvQnydvKmIjm2F5apk0UDmZpf2U4MbxFWuA';
+const PDF_FOLDER_ID = '18UEyAepukQDcYg5w0CmC0fPVkQREPMtG';
+const SIGNATURE_FOLDER_ID = '1uQdmXFV4zxwBEv6amHACuDJS_sKDgofi';
+const DRAFT_MEMO_FOLDER_ID = '1Cyg-8AcvkzIzyCSQwOqG3oVCptIIijS6';
+const TIMESHEET_TEMPLATE_DOC_ID = '151nbkl2x-4l8fmbIumbGm4LbkI7vWeOxsaj8_avcMBc';
+const TIMESHEET_FOLDER_ID = '1ChHo6yIpbz0V-WyC4JR6tiKBubkrXOQ-';
+const BACKUP_FOLDER_ID = '1y81X74IPwlE9K-x7FpX-MNMIX5uxR3yI';
+const COLUMNS = {
+  USER: {
+    ID: 'UserID',
+    USERNAME: 'Username',
+    PASSWORD: 'Password',
+    SIGNATURE: 'signature',
+    ACCESS: 'Access',
+    FIRST_NAME: 'FirstName',
+    LAST_NAME: 'LastName'
+  },
+  REQUEST: {
+    ID: 'RequestID',
+    USER_ID: 'UserID',
+    REQUEST_DATE: 'RequestDate',
+    REASON: 'Reason',
+    STATUS: 'ApprovalStatus',
+    SUPERVISOR_ID: 'SupervisorApproverID',
+    SUPERVISOR_APPROVAL: 'SupervisorApproval',
+    COMMANDER_ID: 'CommanderApproverID',
+    COMMANDER_APPROVAL: 'CommanderApproval',
+    APPROVAL_DATE: 'ApprovalDate',
+    PDF_LINK: 'Approval Document'
+  }
+};
+// ====================================================================
+// ================== ฟังก์ชัน Helper ภายใน (Internal Helpers) ==============
+// ====================================================================
+/**
+ * แปลงตัวเลขอารบิกเป็นเลขไทย
+ * @param {string | number} input - ตัวเลขหรือข้อความที่ต้องการแปลง
+ * @returns {string} ข้อความที่แปลงเป็นเลขไทยแล้ว
+ */
+function toThaiNumerals(input) {
+  if (input === null || typeof input === 'undefined') return '';
+  const str = String(input);
+  const thaiNumerals = ['๐', '๑', '๒', '๓', '๔', '๕', '๖', '๗', '๘', '๙'];
+  return str.replace(/[0-9]/g, (d) => thaiNumerals[parseInt(d, 10)]);
+}
+
+/**
+ * จัดรูปแบบวันที่เป็นภาษาไทยสำหรับเอกสาร (เช่น 29 กรกฎาคม 2568)
+ * @param {string | Date} dateInput - วันที่ที่ต้องการจัดรูปแบบ
+ * @returns {string} วันที่ในรูปแบบภาษาไทย
+ */
+function formatThaiDateForDoc(dateInput) {
+    if (!dateInput) return 'N/A';
+    const date = new Date(dateInput);
+    if (isNaN(date.getTime())) return 'N/A';
+
+    const thaiMonths = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
+    const day = date.getDate();
+    const month = thaiMonths[date.getMonth()];
+    const buddhistYear = date.getFullYear() + 543;
+
+    return `${day} ${month} ${buddhistYear}`;
+}
+
+function _getUsersFromSheet() {
+  const cache = CacheService.getScriptCache();
+  const cachedUsers = cache.get('all_users');
+  if (cachedUsers) {
+    return JSON.parse(cachedUsers);
+  }
+  const userSheet = SpreadsheetApp.openById(SHEET_ID).getSheetByName(USER_SHEET_NAME);
+  if (!userSheet) return [];
+  const data = userSheet.getDataRange().getValues();
+  if (data.length <= 1) return [];
+  const headers = data[0];
+  const users = data.slice(1).map(row => {
+    const user = {};
+    headers.forEach((header, index) => {
+      user[header] = row[index];
+    });
+    return user;
+  });
+  cache.put('all_users', JSON.stringify(users), 600); // Cache for 10 minutes
+  return users;
+}
+
+function _generateNextId(sheet, prefix, idColumnName) {
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const idColIndex = headers.indexOf(idColumnName);
+  if (idColIndex === -1) throw new Error(`Column '${idColumnName}' not found.`);
+  const lastRow = sheet.getLastRow();
+  if (lastRow <= 1) {
+    return `${prefix}${String(1).padStart(5, '0')}`;
+  }
+  const allIds = sheet.getRange(2, idColIndex + 1, lastRow - 1, 1).getValues().flat();
+  const maxNumber = allIds.reduce((max, id) => {
+    const num = parseInt(String(id).replace(prefix, ''), 10) || 0;
+    return num > max ? num : max;
+  }, 0);
+  const nextIdNumber = maxNumber + 1;
+  return `${prefix}${String(nextIdNumber).padStart(5, '0')}`;
+}
+
+/**
+ * ฟังก์ชันกลางสำหรับจัดรูปแบบทั้งชีตเป็นข้อความธรรมดา
+ * @param {string} sheetName - ชื่อของชีตที่ต้องการจัดรูปแบบ
+ */
+function _formatSheetAsText(sheetName) {
+  try {
+    const sheet = SpreadsheetApp.openById(SHEET_ID).getSheetByName(sheetName);
+    if (!sheet || sheet.getLastRow() === 0) return;
+    sheet.getDataRange().setNumberFormat('@');
+  } catch (error) {
+    console.error(`Error in _formatSheetAsText for sheet "${sheetName}":`, error.toString());
+  }
+}
+
+/**
+ * จัดรูปแบบชีตข้อมูลผู้ใช้ (tb_User) เป็นข้อความธรรมดา
+ */
+function formatUserSheetAsText() {
+  _formatSheetAsText(USER_SHEET_NAME);
+}
+
+/**
+ * จัดรูปแบบชีตข้อมูลคำขอ OT (tb_OverTimeRequest) เป็นข้อความธรรมดา
+ */
+function formatOverTimeSheetAsText() {
+  _formatSheetAsText(OVERTIME_REQUEST_SHEET_NAME);
+}
+
+// ====================================================================
+// =========== ฟังก์ชันหลักที่เรียกจาก Frontend (Client-side) ==========
+// ====================================================================
+
+function doGet(e) {
+  return HtmlService.createTemplateFromFile('index')
+    .evaluate()
+    .setTitle('ระบบขออนุญาตทำงานล่วงเวลา')
+    .setSandboxMode(HtmlService.SandboxMode.NATIVE)
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL); // <-- เพิ่มบรรทัดนี้ครับ
+}
+
+function doLogin(username, password) {
+  try {
+    const allUsers = _getUsersFromSheet();
+    if (allUsers.length === 0) throw new Error('No user data found.');
+    const user = allUsers.find(u => String(u.Username) === String(username) && String(u.Password) === String(password));
+    if (user) {
+      return {
+        success: true,
+        role: user.Access,
+        userId: user.UserID,
+        firstName: user.FirstName,
+        lastName: user.LastName,
+        position: user.Position || ''
+      };
+    } else {
+      return { success: false, message: 'ชื่อผู้ใช้งานหรือรหัสผ่านไม่ถูกต้อง.' };
+    }
+  } catch (error) {
+    console.error('Error in doLogin:', error.toString());
+    return { success: false, message: `เกิดข้อผิดพลาดในการเข้าสู่ระบบ: ${error.message}` };
+  }
+}
+
+function changePassword(userId, currentPassword, newPassword) {
+  try {
+    if (!userId || !currentPassword || !newPassword) {
+      return { success: false, message: 'ข้อมูลไม่ครบถ้วน กรุณากรอกข้อมูลให้สมบูรณ์' };
+    }
+    if (newPassword.length < 4) {
+      return { success: false, message: 'รหัสผ่านใหม่ต้องมีความยาวอย่างน้อย 4 ตัวอักษร' };
+    }
+    const sheet = SpreadsheetApp.openById(SHEET_ID).getSheetByName(USER_SHEET_NAME);
+    if (!sheet) throw new Error(`Sheet '${USER_SHEET_NAME}' not found.`);
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0];
+    const userIdCol = headers.indexOf(COLUMNS.USER.ID);
+    const passwordCol = headers.indexOf(COLUMNS.USER.PASSWORD);
+    if (userIdCol === -1 || passwordCol === -1) {
+      throw new Error("Column 'UserID' or 'Password' not found.");
+    }
+    const rowIndex = data.slice(1).findIndex(row => row[userIdCol] === userId);
+    if (rowIndex === -1) {
+      return { success: false, message: 'ไม่พบข้อมูลผู้ใช้งานในระบบ' };
+    }
+    const rowNumber = rowIndex + 2;
+    const storedPassword = data[rowNumber - 1][passwordCol];
+    if (String(storedPassword) !== String(currentPassword)) {
+      return { success: false, message: 'รหัสผ่านปัจจุบันไม่ถูกต้อง' };
+    }
+    sheet.getRange(rowNumber, passwordCol + 1).setValue(newPassword);
+    CacheService.getScriptCache().remove('all_users');
+    SpreadsheetApp.flush();
+    return { success: true, message: 'เปลี่ยนรหัสผ่านสำเร็จ!' };
+  } catch (error) {
+    console.error('Error in changePassword:', error.toString());
+    return { success: false, message: `เกิดข้อผิดพลาด: ${error.message}` };
+  }
+}
+
+function submitOTRequest(requestData) {
+  try {
+    const sheet = SpreadsheetApp.openById(SHEET_ID).getSheetByName(OVERTIME_REQUEST_SHEET_NAME);
+    if (!sheet) throw new Error(`Sheet '${OVERTIME_REQUEST_SHEET_NAME}' not found.`); 
+    
+    // [ป้องกันซ้ำ] ตรวจสอบว่ามีคำขอนี้อยู่แล้วหรือไม่
+    if (typeof _isDuplicateRequest === 'function' && _isDuplicateRequest(sheet, requestData.userId, requestData.requestDate, requestData.reason)) {
+       return { success: false, message: 'คุณได้สร้างคำขอสำหรับ "ภารกิจนี้" ใน "วันที่นี้" ไปแล้ว' };
+    }
+
+    const newRequestId = _generateNextId(sheet, 'OTR', COLUMNS.REQUEST.ID);
+    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0]; 
+
+    // --- [จุดที่แก้ไข] ดึงข้อมูลผู้ใช้เพื่อเช็คแผนก ---
+    const allUsers = _getUsersFromSheet();
+    const currentUser = allUsers.find(u => String(u.UserID) === String(requestData.userId));
+    const department = currentUser ? currentUser.Department : '';
+
+    // ตั้งค่าสถานะเริ่มต้น
+    let initialStatus = 'Pending Supervisor Approval'; // ค่าปกติ: รอหัวหน้า
+
+    // เงื่อนไขพิเศษ: ถ้าเป็น Supervisor เอง หรือ อยู่แผนก "ผู้บริหาร" -> ให้ผ่านไปเลย
+    if (requestData.role === 'supervisor' || department === 'ผู้บริหาร') {
+        initialStatus = 'Approved by Supervisor';
+    }
+    // ------------------------------------------------
+
+    const newRowData = {
+      [COLUMNS.REQUEST.ID]: newRequestId,
+      [COLUMNS.REQUEST.USER_ID]: requestData.userId,
+      [COLUMNS.REQUEST.REQUEST_DATE]: requestData.requestDate,
+      'OverTimeStart': requestData.overTimeStart,
+      'OverTimeEnd': requestData.overTimeEnd,
+      'TotalHours': requestData.totalHours,
+      [COLUMNS.REQUEST.REASON]: requestData.reason,
+      [COLUMNS.REQUEST.STATUS]: initialStatus
+    };
+
+    // ถ้าผ่านการอนุมัติขั้นต้นมาแล้ว (เช่น เป็นผู้บริหาร) ให้ลงบันทึกเวลาไว้ด้วย (Optional)
+    if (initialStatus === 'Approved by Supervisor') {
+      newRowData[COLUMNS.REQUEST.SUPERVISOR_ID] = 'Auto-Skipped'; // หรือใส่ ID ตัวเอง
+      newRowData[COLUMNS.REQUEST.SUPERVISOR_APPROVAL] = 'Approved';
+      newRowData[COLUMNS.REQUEST.APPROVAL_DATE] = new Date();
+    }
+
+    const newRow = headers.map(header => newRowData[header] || '');
+    sheet.appendRow(newRow);
+    formatOverTimeSheetAsText(); 
+    
+    return { success: true, message: 'ส่งคำขอทำงานล่วงเวลาสำเร็จ!', requestId: newRequestId };
+
+  } catch (error) {
+    console.error('Error in submitOTRequest:', error.toString()); 
+    return { success: false, message: `เกิดข้อผิดพลาดในการส่งคำขอ OT: ${error.message}` };
+  }
+}
+
+function updateApprovalStatus(requestId, approverRole, status, approverId) {
+  try {
+    const sheet = SpreadsheetApp.openById(SHEET_ID).getSheetByName(OVERTIME_REQUEST_SHEET_NAME);
+    if (!sheet) throw new Error(`Sheet '${OVERTIME_REQUEST_SHEET_NAME}' not found.`);
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0];
+    const requestIdCol = headers.indexOf(COLUMNS.REQUEST.ID);
+    if (requestIdCol === -1) throw new Error("'RequestID' column not found.");
+    const rowIndex = data.slice(1).findIndex(row => row[requestIdCol] === requestId);
+    if (rowIndex === -1) {
+      return { success: false, message: 'ไม่พบคำขอ.' };
+    }
+    const rowNumber = rowIndex + 2;
+    let approverIdCol, approverStatusCol;
+    if (approverRole === 'supervisor') {
+      approverIdCol = headers.indexOf(COLUMNS.REQUEST.SUPERVISOR_ID);
+      approverStatusCol = headers.indexOf(COLUMNS.REQUEST.SUPERVISOR_APPROVAL);
+    } else if (approverRole === 'commander') {
+      approverIdCol = headers.indexOf(COLUMNS.REQUEST.COMMANDER_ID);
+      approverStatusCol = headers.indexOf(COLUMNS.REQUEST.COMMANDER_APPROVAL);
+    } else {
+      throw new Error(`Invalid approver role: ${approverRole}`);
+    }
+    if (approverIdCol !== -1) {
+      sheet.getRange(rowNumber, approverIdCol + 1).setValue(approverId);
+    }
+    if (approverStatusCol !== -1) {
+      sheet.getRange(rowNumber, approverStatusCol + 1).setValue(status);
+    }
+    const roleName = approverRole === 'supervisor' ? 'Supervisor' : 'Commander';
+    const newStatus = status === 'Approved' ?
+ `Approved by ${roleName}` : `Rejected by ${roleName}`;
+    sheet.getRange(rowNumber, headers.indexOf(COLUMNS.REQUEST.STATUS) + 1).setValue(newStatus);
+    sheet.getRange(rowNumber, headers.indexOf(COLUMNS.REQUEST.APPROVAL_DATE) + 1).setValue(new Date());
+
+    SpreadsheetApp.flush();
+    formatOverTimeSheetAsText();
+    return { success: true, message: 'อัปเดตสถานะการอนุมัติสำเร็จ.' };
+  } catch (error) {
+    console.error('Error in updateApprovalStatus:', error.toString());
+    return { success: false, message: `เกิดข้อผิดพลาดในการอัปเดตสถานะ: ${error.message}` };
+  }
+}
+
+function bulkUpdateApprovalStatus(requestIds, approverRole, status, approverId) {
+  try {
+    const sheet = SpreadsheetApp.openById(SHEET_ID).getSheetByName(OVERTIME_REQUEST_SHEET_NAME);
+    if (!sheet) throw new Error(`Sheet '${OVERTIME_REQUEST_SHEET_NAME}' not found.`);
+
+    const dataRange = sheet.getDataRange();
+    const data = dataRange.getValues();
+    const headers = data[0];
+    const requestIdCol = headers.indexOf(COLUMNS.REQUEST.ID);
+    const statusCol = headers.indexOf(COLUMNS.REQUEST.STATUS);
+    const approvalDateCol = headers.indexOf(COLUMNS.REQUEST.APPROVAL_DATE);
+    if (requestIdCol === -1 || statusCol === -1 || approvalDateCol === -1) {
+      throw new Error("Required columns not found in the sheet.");
+    }
+    
+    let approverIdCol, approverStatusCol;
+    if (approverRole === 'supervisor') {
+      approverIdCol = headers.indexOf(COLUMNS.REQUEST.SUPERVISOR_ID);
+      approverStatusCol = headers.indexOf(COLUMNS.REQUEST.SUPERVISOR_APPROVAL);
+    } else if (approverRole === 'commander') {
+      approverIdCol = headers.indexOf(COLUMNS.REQUEST.COMMANDER_ID);
+      approverStatusCol = headers.indexOf(COLUMNS.REQUEST.COMMANDER_APPROVAL);
+    } else {
+      throw new Error(`Invalid approver role: ${approverRole}`);
+    }
+
+    const idsToUpdate = new Set(requestIds);
+    let updatedCount = 0;
+    for (let i = 1; i < data.length; i++) {
+      if (idsToUpdate.has(data[i][requestIdCol])) {
+        const roleName = approverRole === 'supervisor' ?
+ 'Supervisor' : 'Commander';
+        const newStatus = status === 'Approved' ? `Approved by ${roleName}` : `Rejected by ${roleName}`;
+        
+        data[i][statusCol] = newStatus;
+        data[i][approvalDateCol] = new Date();
+        if (approverIdCol !== -1) data[i][approverIdCol] = approverId;
+        if (approverStatusCol !== -1) data[i][approverStatusCol] = status;
+        
+        updatedCount++;
+      }
+    }
+
+    if (updatedCount > 0) {
+      dataRange.setValues(data);
+      SpreadsheetApp.flush();
+      formatOverTimeSheetAsText();
+    }
+    
+    return { success: true, message: `อัปเดตสถานะ ${updatedCount} รายการสำเร็จ` };
+  } catch (error) {
+    console.error('Error in bulkUpdateApprovalStatus:', error.toString());
+    return { success: false, message: `เกิดข้อผิดพลาด: ${error.message}` };
+  }
+}
+
+function cancelOTRequest(requestId, userId) {
+  try {
+    const sheet = SpreadsheetApp.openById(SHEET_ID).getSheetByName(OVERTIME_REQUEST_SHEET_NAME);
+    if (!sheet) throw new Error(`Sheet '${OVERTIME_REQUEST_SHEET_NAME}' not found.`);
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0];
+    const requestIdCol = headers.indexOf(COLUMNS.REQUEST.ID);
+    const userIdCol = headers.indexOf(COLUMNS.REQUEST.USER_ID);
+    const statusCol = headers.indexOf(COLUMNS.REQUEST.STATUS);
+    if (requestIdCol === -1 || userIdCol === -1 || statusCol === -1) {
+      throw new Error("Required columns (RequestID, UserID, or ApprovalStatus) not found.");
+    }
+
+    const rowIndex = data.slice(1).findIndex(row => row[requestIdCol] === requestId);
+    if (rowIndex === -1) {
+      return { success: false, message: 'ไม่พบคำขอที่ต้องการยกเลิก' };
+    }
+
+    const rowNumber = rowIndex + 2;
+    const requestData = data[rowNumber - 1];
+    const requestOwnerId = requestData[userIdCol];
+    const currentStatus = requestData[statusCol];
+
+    if (String(requestOwnerId) !== String(userId)) {
+      return { success: false, message: 'คุณไม่มีสิทธิ์ยกเลิกคำขอนี้' };
+    }
+
+    if (currentStatus !== 'Pending Supervisor Approval') {
+      return { success: false, message: 'ไม่สามารถยกเลิกคำขอที่ผ่านการพิจารณาไปแล้วได้' };
+    }
+
+    sheet.getRange(rowNumber, statusCol + 1).setValue('ยกเลิกโดยผู้ขอ');
+    SpreadsheetApp.flush();
+    formatOverTimeSheetAsText();
+
+    return { success: true, message: 'ยกเลิกคำขอสำเร็จ!' };
+  } catch (error) {
+    console.error('Error in cancelOTRequest:', error.toString());
+    return { success: false, message: `เกิดข้อผิดพลาดในการยกเลิกคำขอ: ${error.message}` };
+  }
+}
+
+function getOTRequests(userId, role) {
+  try {
+    const otSheet = SpreadsheetApp.openById(SHEET_ID).getSheetByName(OVERTIME_REQUEST_SHEET_NAME);
+    if (!otSheet) throw new Error("OT Request sheet not found.");
+    const otData = otSheet.getDataRange().getValues();
+    const otHeaders = otData[0];
+    const otRequestsData = otData.slice(1);
+    const allUsers = _getUsersFromSheet();
+    const userMap = new Map(allUsers.map(user => [user[COLUMNS.USER.ID], user]));
+    const approverInfo = userMap.get(userId);
+    const approverDepartment = approverInfo ? approverInfo.Department : null;
+    const requests = otRequestsData.map(row => {
+      const request = {};
+      otHeaders.forEach((header, index) => { request[header] = row[index]; });
+      return request;
+    }).filter(request => {
+      switch (role) {
+        case 'employee':
+          return request[COLUMNS.REQUEST.USER_ID] === userId;
+        case 'supervisor': {
+          const requesterInfo = userMap.get(request[COLUMNS.REQUEST.USER_ID]);
+          const requesterDepartment = requesterInfo ? requesterInfo.Department : null;
+          return request[COLUMNS.REQUEST.STATUS] === 'Pending Supervisor Approval' &&
+               requesterDepartment === approverDepartment;
+        }
+    
+        case 'commander':
+          return request[COLUMNS.REQUEST.STATUS] === 'Approved by Supervisor';
+        case 'admin':
+          return true;
+        default:
+          return false;
+      }
+    }).map(request => {
+      const requesterUser = userMap.get(request[COLUMNS.REQUEST.USER_ID]);
+      if (requesterUser) {
+        request.RequesterFirstName = requesterUser.FirstName;
+        request.RequesterLastName = requesterUser.LastName;
+        request.RequesterDepartment = requesterUser.Department;
+        request.RequesterPosition = requesterUser.Position;
+      }
+      return request;
+    });
+    requests.sort((a, b) => b[COLUMNS.REQUEST.ID].localeCompare(a[COLUMNS.REQUEST.ID]));
+    return requests;
+  } catch (error) {
+    console.error('Error in getOTRequests:', error.toString());
+    return [];
+  }
+}
+
+function getAllUsers() {
+  try {
+    return _getUsersFromSheet();
+  } catch (error) {
+    console.error('Error in getAllUsers:', error.toString());
+    return [];
+  }
+}
+
+function addUser(userData) {
+  try {
+    const sheet = SpreadsheetApp.openById(SHEET_ID).getSheetByName(USER_SHEET_NAME);
+    if (!sheet) throw new Error(`Sheet '${USER_SHEET_NAME}' not found.`);
+    const allUsers = _getUsersFromSheet();
+    const newUsername = userData[COLUMNS.USER.USERNAME];
+    if (!newUsername || String(newUsername).trim() === '') {
+      return { success: false, message: 'กรุณากรอกชื่อผู้ใช้งาน (Username)' };
+    }
+    const isDuplicate = allUsers.some(user =>
+      user[COLUMNS.USER.USERNAME] &&
+      String(user[COLUMNS.USER.USERNAME]).toLowerCase() === String(newUsername).toLowerCase()
+    );
+    if (isDuplicate) {
+      return { success: false, message: `ชื่อผู้ใช้งาน '${newUsername}' นี้มีอยู่แล้วในระบบ กรุณาใช้ชื่ออื่น` };
+    }
+    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    const newUserID = _generateNextId(sheet, 'USR', COLUMNS.USER.ID);
+    userData[COLUMNS.USER.ID] = newUserID;
+    if (typeof userData[COLUMNS.USER.SIGNATURE] === 'string' && userData[COLUMNS.USER.SIGNATURE].startsWith('data:image/')) {
+      userData[COLUMNS.USER.SIGNATURE] = saveBase64ImageToDrive(userData[COLUMNS.USER.SIGNATURE], `signature_${newUserID}.png`);
+    }
+    const newRow = headers.map(header => userData[header] || '');
+    sheet.appendRow(newRow);
+    CacheService.getScriptCache().remove('all_users');
+    formatUserSheetAsText();
+    return { success: true, message: 'เพิ่มผู้ใช้งานสำเร็จ!', userId: newUserID };
+  } catch (error) {
+    console.error('Error in addUser:', error.toString());
+    return { success: false, message: `เกิดข้อผิดพลาด: ${error.message}` };
+  }
+}
+
+function editUser(userIdToEdit, updatedData) {
+  try {
+    const sheet = SpreadsheetApp.openById(SHEET_ID).getSheetByName(USER_SHEET_NAME);
+    if (!sheet) throw new Error(`Sheet '${USER_SHEET_NAME}' not found.`);
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0];
+    const userIdColIndex = headers.indexOf(COLUMNS.USER.ID);
+    if (userIdColIndex === -1) throw new Error("'UserID' column not found.");
+
+    const rowIndex = data.slice(1).findIndex(row => row[userIdColIndex] === userIdToEdit);
+    if (rowIndex === -1) return { success: false, message: 'ไม่พบผู้ใช้งานที่ต้องการแก้ไข' };
+
+    const rowNumberInSheet = rowIndex + 2;
+    const currentRowData = data[rowIndex + 1];
+
+    if (updatedData.hasOwnProperty('signature')) {
+      if (updatedData.signature === 'DELETE') {
+        const signatureColIndex = headers.indexOf(COLUMNS.USER.SIGNATURE);
+        if (signatureColIndex !== -1) {
+            const oldSignatureFileId = currentRowData[signatureColIndex];
+            if (oldSignatureFileId) {
+                try { DriveApp.getFileById(oldSignatureFileId).setTrashed(true); } catch (e) { console.error(`Could not delete old signature file (ID: ${oldSignatureFileId}): ${e.toString()}`);}
+            }
+        }
+        updatedData.signature = '';
+      } else if (typeof updatedData.signature === 'string' && updatedData.signature.startsWith('data:image/')) {
+        updatedData.signature = saveBase64ImageToDrive(updatedData.signature, `signature_${userIdToEdit}.png`);
+      }
+    }
+    
+    headers.forEach((header, colIndex) => {
+      if (updatedData.hasOwnProperty(header)) {
+        if (header === COLUMNS.USER.PASSWORD && !updatedData[header]) {
+          return; 
+        }
+        sheet.getRange(rowNumberInSheet, colIndex + 1).setValue(updatedData[header]);
+      }
+    });
+    CacheService.getScriptCache().remove('all_users');
+    formatUserSheetAsText();
+    return { success: true, message: 'แก้ไขข้อมูลผู้ใช้งานสำเร็จ!' };
+
+  } catch (error) {
+    console.error('Error in editUser:', error.toString());
+    return { success: false, message: `เกิดข้อผิดพลาด: ${error.message}` };
+  }
+}
+
+function deleteUser(userIdToDelete) {
+  try {
+    const sheet = SpreadsheetApp.openById(SHEET_ID).getSheetByName(USER_SHEET_NAME);
+    if (!sheet) throw new Error(`Sheet '${USER_SHEET_NAME}' not found.`);
+    const data = sheet.getDataRange().getValues();
+    const headers = data[0];
+    const userIdCol = headers.indexOf(COLUMNS.USER.ID);
+    if (userIdCol === -1) throw new Error("'UserID' column not found.");
+    const rowIndex = data.slice(1).findIndex(row => row[userIdCol] === userIdToDelete);
+    if (rowIndex !== -1) {
+      sheet.deleteRow(rowIndex + 2);
+      CacheService.getScriptCache().remove('all_users');
+      formatUserSheetAsText();
+      return { success: true, message: 'ลบผู้ใช้งานสำเร็จ!' };
+    } else {
+      return { success: false, message: 'ไม่พบผู้ใช้งาน.' };
+    }
+  } catch (error) {
+    console.error('Error in deleteUser:', error.toString());
+    return { success: false, message: `เกิดข้อผิดพลาด: ${error.message}` };
+  }
+}
+
+function getOTReport(filters) {
+  try {
+    const otSheet = SpreadsheetApp.openById(SHEET_ID).getSheetByName(OVERTIME_REQUEST_SHEET_NAME);
+    if (!otSheet) throw new Error("OT Request sheet not found.");
+    const otData = otSheet.getDataRange().getValues();
+    const otHeaders = otData[0];
+    const otRequests = otData.slice(1);
+    const allUsers = _getUsersFromSheet();
+    const userMap = new Map(allUsers.map(user => [user[COLUMNS.USER.ID], user]));
+    const report = otRequests.map(row => {
+      const request = {};
+      otHeaders.forEach((h, i) => request[h] = row[i]);
+      const requester = userMap.get(request[COLUMNS.REQUEST.USER_ID]);
+      if (requester) {
+        request.RequesterFirstName = requester.FirstName;
+        request.RequesterLastName = requester.LastName;
+        request.RequesterDepartment = requester.Department;
+      }
+      return request;
+    }).filter(request => {
+      let passFilter = true;
+      if (filters.status && filters.status !== 'All' && request[COLUMNS.REQUEST.STATUS] !== filters.status) passFilter = false;
+      if (filters.department && filters.department !== 'All' && request.RequesterDepartment !== 
+ filters.department) passFilter = false;
+      
+      if(filters.startDate || filters.endDate) {
+        const requestDate = new Date(request[COLUMNS.REQUEST.REQUEST_DATE]);
+        if (filters.startDate && requestDate < new Date(filters.startDate)) passFilter = false;
+        if (filters.endDate) {
+          const endDate = new Date(filters.endDate);
+          endDate.setHours(23, 59, 59, 999);
+          if (requestDate > endDate) passFilter = false;
+        }
+      }
+      return passFilter;
+    });
+    report.sort((a, b) => new Date(b[COLUMNS.REQUEST.REQUEST_DATE]) - new Date(a[COLUMNS.REQUEST.REQUEST_DATE]));
+    return report;
+  } catch (error) {
+    console.error('Error in getOTReport:', error.toString());
+    return [];
+  }
+}
+
+function getApprovedRequestsForMemo(startDate, endDate) {
+  try {
+    const otSheet = SpreadsheetApp.openById(SHEET_ID).getSheetByName(OVERTIME_REQUEST_SHEET_NAME);
+    if (!otSheet) throw new Error("OT Request sheet not found.");
+    const otData = otSheet.getDataRange().getValues();
+    const otHeaders = otData[0];
+    const otRequests = otData.slice(1);
+    const allUsers = _getUsersFromSheet();
+    const userMap = new Map(allUsers.map(user => [user[COLUMNS.USER.ID], user]));
+    const approvedRequests = otRequests.map(row => {
+      const request = {};
+      otHeaders.forEach((h, i) => request[h] = row[i]);
+      const requester = userMap.get(request[COLUMNS.REQUEST.USER_ID]);
+      if (requester) {
+        request.FirstName = requester.FirstName;
+        request.LastName = requester.LastName;
+        request.Position = requester.Position;
+        request.Department = requester.Department; 
+      }
+      return request;
+    }).filter(request => {
+      if (request[COLUMNS.REQUEST.STATUS] !== 'Approved by Commander') {
+        return false;
+      }
+      const requestDate = new Date(request[COLUMNS.REQUEST.REQUEST_DATE]);
+      if (startDate && requestDate < new Date(startDate)) 
+ {
+        return false;
+      }
+      if (endDate) {
+        const end = new Date(endDate);
+        end.setHours(23, 59, 59, 999);
+        if (requestDate > end) {
+          return false;
+        }
+      }
+      return true;
+    });
+    approvedRequests.sort((a, b) => new Date(a[COLUMNS.REQUEST.REQUEST_DATE]) - new Date(b[COLUMNS.REQUEST.REQUEST_DATE]));
+    return approvedRequests;
+  } catch (error) {
+    console.error('Error in getApprovedRequestsForMemo:', error.toString());
+    return [];
+  }
+}
+
+/**
+ * สร้างเอกสาร Memo (แก้ไขเพิ่มตัวเลือก Controller)
+ */
+function generateMemoDocument(selectedData, format, controllerType) {
+  // controllerType = 'auto' (คำนวณเอง) หรือ 'commander' (ใช้ชื่อ ผอ.)
+  // ถ้าไม่ส่งมา ให้ค่า default เป็น 'auto'
+  controllerType = controllerType || 'auto';
+
+  if (!selectedData || selectedData.length === 0) {
+    return { success: false, message: 'ไม่มีข้อมูลให้สร้างเอกสาร' };
+  }
+  
+  try {
+    const destinationFolder = DriveApp.getFolderById(DRAFT_MEMO_FOLDER_ID);
+    const templateFile = DriveApp.getFileById(TEMPLATE_DOC_ID);
+    const currentDate = new Date().toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' });
+    const newDocName = `ร่างบันทึกขออนุมัติปฏิบัติงานล่วงเวลา (สร้างเมื่อ ${currentDate})`;
+    const newDocFile = templateFile.makeCopy(newDocName, destinationFolder);
+    const doc = DocumentApp.openById(newDocFile.getId());
+    const body = doc.getBody();
+    const now = new Date();
+    
+    const thaiMonths = ["มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน", "กรกฎาคม", "สิงหาคม", "กันยายน", "ตุลาคม", "พฤศจิกายน", "ธันวาคม"];
+    const buddhistYearText = `/${toThaiNumerals(now.getFullYear() + 543)}`;
+    const monthYearText = `${thaiMonths[now.getMonth()]} ${toThaiNumerals(now.getFullYear() + 543)}`;
+    
+    // แทนที่ Placeholder ทั่วไป
+    body.replaceText('{{BUDDHIST_YEAR}}', buddhistYearText);
+    body.replaceText('{{MONTH_YEAR}}', monthYearText);
+    
+    const allUsers = _getUsersFromSheet();
+    
+    // 1. จัดการส่วน Commander (ผู้อนุมัติ)
+    const commander = allUsers.find(user => user.Access === 'commander');
+    if (commander) {
+      const commanderName = `( ${commander.FirstName} ${commander.LastName} )`;
+      body.replaceText('{{COMMANDER_NAME}}', commanderName);
+      body.replaceText('{{COMMANDER_POSITION}}', commander.Position || '');
+
+      const signaturePlaceholder = body.findText('{{COMMANDER_SIGNATURE}}');
+      if (signaturePlaceholder && commander.signature) {
+        try {
+          const signatureFile = DriveApp.getFileById(commander.signature);
+          const signatureBlob = signatureFile.getBlob();
+          const signatureElement = signaturePlaceholder.getElement();
+          const parentElement = signatureElement.getParent();
+          signatureElement.asText().setText('');
+          const image = parentElement.asParagraph().insertInlineImage(0, signatureBlob);
+          const width = image.getWidth();
+          const height = image.getHeight();
+          image.setWidth(120);
+          image.setHeight(height * (120 / width));
+        } catch (e) {
+          console.error(`Could not process signature for commander: ${e.toString()}`);
+          body.replaceText('{{COMMANDER_SIGNATURE}}', '(ไม่พบไฟล์ลายเซ็น)');
+        }
+      } else if (signaturePlaceholder) {
+         body.replaceText('{{COMMANDER_SIGNATURE}}', '');
+      }
+    }
+
+// 2. [แก้ไขใหม่] จัดการผู้ควบคุมการปฏิบัติงาน (Controller)
+    let controllerText = "..................................................................";
+    
+    // ฟังก์ชันช่วยรวมคำ: ตัดค่าว่างทิ้ง แล้วคั่นด้วยวรรคเดียว (แก้ปัญหาวรรคเบิ้ล)
+    const joinText = (...parts) => parts.filter(p => p && p.toString().trim() !== '').join(' ');
+
+    if (controllerType === 'commander' && commander) {
+        // กรณีเลือก "ผู้บังคับบัญชา"
+        controllerText = joinText(commander.FirstName, commander.LastName, commander.Position);
+    } else {
+        // กรณีเลือก "คำนวณอัตโนมัติ" (Logic เดิม)
+        if (selectedData.length > 0) {
+            const departmentCounts = {};
+            selectedData.forEach(item => {
+                const user = allUsers.find(u => `${u.FirstName} ${u.LastName}` === item.fullName);
+                if (user && user.Department) {
+                    departmentCounts[user.Department] = (departmentCounts[user.Department] || 0) + 1;
+                }
+            });
+
+            let maxDept = null;
+            let maxCount = 0;
+            for (const [dept, count] of Object.entries(departmentCounts)) {
+                if (count > maxCount) {
+                    maxCount = count;
+                    maxDept = dept;
+                }
+            }
+
+            if (maxDept) {
+                const supervisor = allUsers.find(u => u.Department === maxDept && u.Access === 'supervisor');
+                if (supervisor) {
+                    // ใช้ฟังก์ชัน joinText เพื่อจัดรูปแบบให้สวยงาม
+                    controllerText = joinText(supervisor.FirstName, supervisor.LastName, supervisor.Position);
+                }
+            }
+        }
+    }
+    
+    const targetText = "พ.ศ. ๒๕๕๐";
+    const newTextSuffix = ` โดยให้ ${controllerText} ควบคุมการปฏิบัติงานและการเบิกจ่ายให้เป็นไปโดยถูกต้องตามระเบียบของทางราชการ`;
+    body.replaceText(targetText, targetText + newTextSuffix);
+
+    // 3. สร้างตาราง (Logic เดิม)
+    const tablePlaceholder = body.findText('{{OVERTIME_TABLE}}');
+    if (tablePlaceholder) {
+      const holidayDates = getHolidayDates();
+      const uniqueDateMap = new Map();
+      selectedData.forEach(item => {
+         const d = new Date(item.requestDate);
+         const ymd = Utilities.formatDate(d, Session.getScriptTimeZone(), "yyyy-MM-dd");
+         const isHol = (d.getDay() === 0 || d.getDay() === 6 || holidayDates.includes(ymd));
+         if (!uniqueDateMap.has(ymd)) {
+             uniqueDateMap.set(ymd, { dateObj: d, isHoliday: isHol });
+         }
+      });
+      const sortedDates = Array.from(uniqueDateMap.values()).sort((a, b) => a.dateObj - b.dateObj);
+      const workDays = sortedDates.filter(x => !x.isHoliday);
+      const holiDays = sortedDates.filter(x => x.isHoliday);
+      
+      const thaiShortMonths = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
+      const formatGroupedDates = (dateItems) => {
+          const groups = {};
+          dateItems.forEach(item => {
+              const d = item.dateObj;
+              const key = `${d.getFullYear()}-${d.getMonth()}`;
+              if (!groups[key]) groups[key] = [];
+              groups[key].push(d.getDate());
+          });
+          const resultLines = [];
+          Object.keys(groups).sort().forEach(key => {
+              const [year, monthIdx] = key.split('-').map(Number);
+              const days = groups[key].sort((a, b) => a - b);
+              const daysStr = days.join(', ');
+              const monthStr = thaiShortMonths[monthIdx];
+              const buddhistYear = year + 543;
+              const line = `วันที่ ${daysStr} ${monthStr} ${buddhistYear}`;
+              resultLines.push(toThaiNumerals(line));
+          });
+          return resultLines;
+      };
+
+      let dateHtml = '';
+      if (workDays.length > 0) {
+          dateHtml += `<p style="margin: 0; padding: 0; font-weight: bold; text-decoration: underline;">วันทำการ</p>`;
+          const formattedWorkDays = formatGroupedDates(workDays);
+          formattedWorkDays.forEach(line => dateHtml += `<p style="margin: 0; padding: 0;">${line}</p>`);
+      }
+      if (holiDays.length > 0) {
+           if (dateHtml !== '') dateHtml += `<br/>`;
+           dateHtml += `<p style="margin: 0; padding: 0; font-weight: bold; text-decoration: underline;">วันหยุดราชการ</p>`;
+           const formattedHoliDays = formatGroupedDates(holiDays);
+           formattedHoliDays.forEach(line => dateHtml += `<p style="margin: 0; padding: 0;">${line}</p>`);
+      }
+
+      const uniqueMissions = [...new Set(selectedData.map(item => `\t- ${item.reason.trim()}`))];
+     // 1. รวบรวมรายชื่อ (เหมือนเดิม)
+      const uniquePeople = new Map();
+      selectedData.forEach(item => {
+        const key = `${item.fullName}_${item.position}`;
+        if (!uniquePeople.has(key)) {
+          uniquePeople.set(key, {
+            fullName: item.fullName,
+            position: item.position
+          });
+        }
+      });
+
+      // 2. [เพิ่ม] กำหนดลำดับความอาวุโส (Ranking)
+      const peopleArray = Array.from(uniquePeople.values());
+      const positionRank = {
+        'ผู้อำนวยการกองประสานนโยบายและยุทธศาสตร์': 1,
+        'ผู้เชี่ยวชาญด้านประสานนโยบายและยุทธศาสตร์':2,
+        'ผู้อำนวยการกลุ่มประสานนโยบายและยุทธศาสตร์ ๑': 3,
+        'ผู้อำนวยการกลุ่มประสานนโยบายและยุทธศาสตร์ ๒': 4,
+        'ผู้อำนวยการกลุ่มประสานนโยบายและยุทธศาสตร์ ๓': 5,
+        'ผู้อำนวยการกลุ่มประสานนโยบายและยุทธศาสตร์ ๔': 6,
+        'หัวหน้าฝ่ายบริหาร': 7,
+        'นักวิเคราะห์นโยบายและแผนชำนาญการพิเศษ': 8, 
+        'นักวิเคราะห์นโยบายและแผนชำนาญการ': 9,  
+        'นักวิเคราะห์นโยบายและแผนปฏิบัติการ': 10,
+        'เจ้าพนักงานธุรการชำนาญงาน': 11,
+        'เจ้าพนักงานธุรการปฏิบัติงาน': 12,
+        'เจ้าหน้าที่วิเคราะห์นโยบายและเเผน': 13,
+        'พนักงาน ธุรการ ส ๓': 14,
+        'เจ้าหน้าที่บริหารงานทั่วไป': 15,
+        'เจ้าหน้าที่รับรอง': 16,
+        'เจ้าพนักงานธุรการ': 17
+      };
+
+      const getRank = (position) => {
+        if (!position) return 999; // ถ้าไม่มีตำแหน่ง ให้ไปท้ายสุด
+        const posTrimmed = position.trim();
+        // คืนค่าลำดับจากตาราง ถ้าไม่เจอให้เป็น 999 (ท้ายสุด)
+        return positionRank[posTrimmed] || 999;
+      };
+
+      // 3. [เพิ่ม] สั่งเรียงลำดับ (Sort)
+      peopleArray.sort((a, b) => {
+        const rankA = getRank(a.position);
+        const rankB = getRank(b.position);
+        
+        if (rankA !== rankB) {
+            return rankA - rankB; // เรียงตามตำแหน่งก่อน (เลขน้อยขึ้นก่อน)
+        }
+        // ถ้าตำแหน่งเท่ากัน (หรือ Rank เท่ากัน) ให้เรียงตามชื่อ ก-ฮ
+        return a.fullName.localeCompare(b.fullName, 'th');
+      });
+
+      // 4. สร้างรายการ HTML จากข้อมูลที่เรียงแล้ว
+      const peopleList = peopleArray.map((item, i) => {
+        return `\t${toThaiNumerals(i + 1)}) ${item.fullName}<br/>\t${item.position}`;
+      });
+
+      const peopleHtml = peopleList.join('<hr style="border: 0; border-top: 1px solid #000; margin: 0;" />');
+      const missionHtml = uniqueMissions.map(m => `<p style="margin: 0; padding: 0;">${m}</p>`).join('');
+      
+      let html = `<table style="width:100%; border-collapse: collapse; font-family: 'Sarabun', sans-serif; font-size: 15pt; line-height: 0.9;" border="1">
+                    <thead>
+                      <tr style="font-weight: bold; font-size: 17pt;">
+                        <td style="text-align: center; padding: 2px; width: 24%;">วัน/เดือน/ปี</td>
+                        <td style="text-align: center; padding: 2px; width: 39%;">รายชื่อ/ตำแหน่ง</td>
+                        <td style="text-align: center; padding: 2px; width: 37%;">ภารกิจ</td>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr>
+                        <td style="vertical-align: top; padding: 2px 5px;">${dateHtml}</td>
+                        <td style="vertical-align: top; padding: 2px 5px;">${peopleHtml}</td>
+                        <td style="vertical-align: top; padding: 2px 5px;">${missionHtml}</td>
+                      </tr>
+                    </tbody>
+                  </table>`;
+      const tempFileName = `temp-table-${Date.now()}`;
+      const htmlBlob = Utilities.newBlob(html, MimeType.HTML, `${tempFileName}.html`);
+      const tempDocFile = Drive.Files.create({ name: tempFileName, mimeType: MimeType.GOOGLE_DOCS }, htmlBlob);
+      const tempDoc = DocumentApp.openById(tempDocFile.id);
+      const tempTable = tempDoc.getBody().getTables()[0];
+      const copiedTable = tempTable.copy();
+      
+      const parentParagraph = tablePlaceholder.getElement().getParent();
+      const index = body.getChildIndex(parentParagraph);
+      body.insertTable(index, copiedTable);
+      parentParagraph.removeFromParent();
+
+      Drive.Files.remove(tempDocFile.id);
+    }
+    
+    doc.saveAndClose();
+
+    let finalFile;
+    if (format === 'pdf') {
+      const pdfBlob = newDocFile.getAs('application/pdf');
+      finalFile = destinationFolder.createFile(pdfBlob).setName(newDocFile.getName() + ".pdf");
+      DriveApp.getFileById(newDocFile.getId()).setTrashed(true);
+    } else {
+      finalFile = newDocFile;
+    }
+    
+    finalFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    return { success: true, fileUrl: finalFile.getUrl(), fileName: finalFile.getName() };
+  } catch (error) {
+    console.error('Error generating memo document:', error.toString(), error.stack);
+    return { success: false, message: 'เกิดข้อผิดพลาดในการสร้างเอกสาร: ' + error.message };
+  }
+}
+
+/**
+ * สร้างเอกสาร Timesheet (ปรับปรุง: เรียงตามวันที่ -> แล้วเรียงตามอาวุโส)
+ */
+function generateTimesheetDocument(selectedData, format, monthYearTh) {
+  if (!selectedData || selectedData.length === 0) {
+    return { success: false, message: 'ไม่มีข้อมูลให้สร้างเอกสาร' };
+  }
+  
+  try {
+    // 1. เตรียมข้อมูล User และลำดับอาวุโส
+    const allUsers = _getUsersFromSheet();
+    
+    const positionRank = {
+         'ผู้อำนวยการกองประสานนโยบายและยุทธศาสตร์': 1,
+        'ผู้เชี่ยวชาญด้านประสานนโยบายและยุทธศาสตร์':2,
+        'ผู้อำนวยการกลุ่มประสานนโยบายและยุทธศาสตร์ ๑': 3,
+        'ผู้อำนวยการกลุ่มประสานนโยบายและยุทธศาสตร์ ๒': 4,
+        'ผู้อำนวยการกลุ่มประสานนโยบายและยุทธศาสตร์ ๓': 5,
+        'ผู้อำนวยการกลุ่มประสานนโยบายและยุทธศาสตร์ ๔': 6,
+        'หัวหน้าฝ่ายบริหาร': 7,
+        'นักวิเคราะห์นโยบายและแผนชำนาญการพิเศษ': 8, 
+        'นักวิเคราะห์นโยบายและแผนชำนาญการ': 9,  
+        'นักวิเคราะห์นโยบายและแผนปฏิบัติการ': 10,
+        'เจ้าพนักงานธุรการชำนาญงาน': 11,
+        'เจ้าพนักงานธุรการปฏิบัติงาน': 12,
+        'เจ้าหน้าที่วิเคราะห์นโยบายและเเผน': 13,
+        'พนักงาน ธุรการ ส ๓': 14,
+        'เจ้าหน้าที่บริหารงานทั่วไป': 15,
+        'เจ้าหน้าที่รับรอง': 16,
+        'เจ้าพนักงานธุรการ': 17
+    };
+
+    const getRank = (position) => {
+        if (!position) return 999;
+        return positionRank[position.trim()] || 999;
+    };
+
+    // 2. เติมข้อมูลตำแหน่ง (Position) และวันที่ (Date Object) ให้ครบถ้วน
+    selectedData.forEach(item => {
+        // หาตำแหน่งจากชื่อ (ถ้าไม่มีติดมา)
+        if (!item.position) {
+            const user = allUsers.find(u => `${u.FirstName} ${u.LastName}` === item.fullName);
+            item.position = user ? user.Position : '';
+        }
+        
+        // แปลงวันที่เป็น Object เพื่อใช้เปรียบเทียบ
+        // สมมติ requestDate มาในรูปแบบ "20/มกราคม/2569" หรือ "YYYY-MM-DD"
+        // แต่ปกติหน้าเว็บส่งมาเป็น text ที่ format แล้ว เราต้องระวัง
+        // เพื่อความชัวร์ เราจะลองแปลง หรือถ้าหน้าเว็บส่ง raw date มาจะดีมาก
+        // ในที่นี้สมมติว่า item.requestDate เป็น string ที่ sort ตามตัวอักษรไม่ได้ 
+        // เราจึงต้องพึ่งพาลำดับเดิม หรือใช้วิธี parse (แต่เพื่อความง่าย เราจะ Sort ในนี้เลย)
+        
+        // หมายเหตุ: เพื่อความแม่นยำสูงสุด ระบบควรรับ rawRequestDate แต่ถ้าไม่มี 
+        // เราจะพยายาม Parse จาก text ภาษาไทย หรือใช้ลำดับเดิมเป็นหลัก
+    });
+    
+    // 3. สั่งเรียงลำดับ: วันที่มาก่อน -> ตามด้วยความอาวุโส
+    selectedData.sort((a, b) => {
+        // 3.1 เรียงตามวันที่ก่อน (Convert text date to comparable value if possible)
+        // เนื่องจาก Format วันที่เป็นไทย "d Month YYYY" อาจเรียงยาก 
+        // เราจะใช้วิธี: ถ้าวันที่ต่างกัน ให้คงลำดับเดิมไว้ (ถือว่ามาถูกแล้ว) 
+        // หรือถ้าจะให้ชัวร์ต้องแก้ Frontend ให้ส่ง YYYY-MM-DD มาด้วย
+        // แต่เบื้องต้น: เราจะเรียงเฉพาะเมื่อ "วันที่เป็นข้อความเดียวกัน"
+        
+        if (a.requestDate !== b.requestDate) {
+             // ถ้าวันไม่เหมือนกัน ไม่ต้องสลับที่ (เชื่อลำดับจากหน้าเว็บที่เรียงวันที่มาแล้ว)
+             return 0; 
+        }
+
+        // 3.2 ถ้าวันเดียวกัน ให้เรียงตามอาวุโส
+        const rankA = getRank(a.position);
+        const rankB = getRank(b.position);
+        
+        if (rankA !== rankB) {
+            return rankA - rankB; // ค่าน้อย (อาวุโสกว่า) ขึ้นก่อน
+        }
+        
+        // 3.3 ถ้าตำแหน่งเท่ากัน เรียงตามชื่อ
+        return a.fullName.localeCompare(b.fullName, 'th');
+    });
+
+    // 4. รันเลขลำดับที่ (Sequence) ใหม่ ให้เรียงสวยงาม 1, 2, 3... ตามที่จัดใหม่
+    // ต้องระวัง: ถ้าข้ามวัน ต้องเริ่มนับ 1 ใหม่หรือไม่? 
+    // ปกติบัญชีลงเวลาจะรันเลขต่อกัน หรือแยกวัน?
+    // ถ้าดูจาก template ปกติจะรันต่อกันยาวๆ หรือ reset ตามวัน? 
+    // ส่วนใหญ่ถ้าเป็นตารางรวมจะรัน 1..N ในแต่ละวัน หรือ 1..N ทั้งเดือน
+    // แต่ใน code เดิม `item.sequence` มาจากหน้าเว็บ
+    // เพื่อความปลอดภัย เราจะ Re-index ลำดับใหม่ตามที่เรียงเสร็จแล้ว
+    let currentSeq = 1;
+    let lastDate = '';
+    
+    selectedData.forEach((item, index) => {
+        // ถ้าระบบต้องการให้เริ่มนับ 1 ใหม่เมื่อเปลี่ยนวัน ให้เปิดคอมเมนต์ด้านล่างนี้
+        /*
+        if (item.requestDate !== lastDate) {
+            currentSeq = 1;
+            lastDate = item.requestDate;
+        }
+        */
+        item.sequence = currentSeq++; 
+    });
+
+
+    // 5. สร้างไฟล์ (Code เดิม)
+    const destinationFolder = DriveApp.getFolderById(TIMESHEET_FOLDER_ID);
+    const templateFile = DriveApp.getFileById(TIMESHEET_TEMPLATE_DOC_ID);
+    const currentDate = new Date().toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' });
+    const newDocName = `บัญชีลงเวลา OT ${monthYearTh} (สร้างเมื่อ ${currentDate})`;
+    
+    const newDocFile = templateFile.makeCopy(newDocName, destinationFolder);
+    const doc = DocumentApp.openById(newDocFile.getId());
+
+    const header = doc.getHeader();
+    if (header) {
+      header.replaceText('{{MONTH_YEAR_TH}}', monthYearTh);
+    }
+    
+    const body = doc.getBody();
+    const table = body.getTables()[0];
+    if (!table) {
+      throw new Error("Table not found in the template file.");
+    }
+
+    const templateRow = table.getRow(1);
+    if (!templateRow) {
+        throw new Error("Template row (row 2) not found in the table.");
+    }
+
+    // วนลูปสร้างแถวจากข้อมูลที่ Sort แล้ว
+    selectedData.forEach(item => {
+      const newRow = table.appendTableRow(templateRow.copy());
+      newRow.replaceText('{{date}}', item.requestDate || '');
+      newRow.replaceText('{{sequence}}', item.sequence || ''); // ใช้ sequence ที่รันใหม่
+      newRow.replaceText('{{fullName}}', item.fullName || '');
+      newRow.replaceText('{{reason}}', item.reason || '');
+    });
+
+    table.removeRow(1);
+    table.editAsText().setFontSize(11);
+    doc.saveAndClose();
+
+    let finalFile;
+    if (format === 'pdf') {
+      const pdfBlob = newDocFile.getAs('application/pdf');
+      finalFile = destinationFolder.createFile(pdfBlob).setName(newDocFile.getName() + ".pdf");
+      DriveApp.getFileById(newDocFile.getId()).setTrashed(true);
+    } else {
+      finalFile = newDocFile;
+    }
+
+    finalFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    
+    return { success: true, fileUrl: finalFile.getUrl(), fileName: finalFile.getName() };
+  } catch (error) {
+    const fullErrorDetails = `Function: generateTimesheetDocument\nError: ${error.message}\nStack: ${error.stack}`;
+    console.error(fullErrorDetails);
+    return { success: false, message: `DEBUG INFO: ${fullErrorDetails}` };
+  }
+}
+
+function saveBase64ImageToDrive(base64Data, fileName) {
+  try {
+    if (!base64Data || !base64Data.includes('base64,')) {
+      return base64Data;
+    }
+    const match = base64Data.match(/data:(.+);base64,(.+)/);
+    if (!match || match.length < 3) {
+      throw new Error("Invalid base64 data string format.");
+    }
+    const mimeType = match[1];
+    const base64Content = match[2];
+    const fileBlob = Utilities.newBlob(Utilities.base64Decode(base64Content), mimeType, fileName);
+    const folder = DriveApp.getFolderById(SIGNATURE_FOLDER_ID);
+    const existingFiles = folder.getFilesByName(fileName);
+    while (existingFiles.hasNext()) {
+      existingFiles.next().setTrashed(true);
+    }
+    const file = folder.createFile(fileBlob);
+    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    return file.getId();
+  } catch (e) {
+    console.error(`Error in saveBase64ImageToDrive: ${e.toString()}`);
+    return null;
+  }
+}
+
+function getTaskOptions() {
+  try {
+    const sheet = SpreadsheetApp.openById(SHEET_ID).getSheetByName(TASK_SHEET_NAME);
+    if (!sheet) {
+      return ["(ไม่พบฐานข้อมูลภารกิจ)"];
+    }
+    const lastRow = sheet.getLastRow();
+    if (lastRow < 2) {
+      return [];
+    }
+    const tasks = sheet.getRange(2, 1, lastRow - 1, 1).getValues()
+      .flat()
+      .filter(String);
+    return tasks;
+  } catch (e) {
+    console.error('Error in getTaskOptions:', e.toString());
+    return [`เกิดข้อผิดพลาด: ${e.message}`];
+  }
+}
+
+function addTaskOption(taskName) {
+  try {
+    if (!taskName || taskName.trim() === '') {
+      return { success: false, message: 'ชื่อภารกิจห้ามว่าง' };
+    }
+    const sheet = SpreadsheetApp.openById(SHEET_ID).getSheetByName(TASK_SHEET_NAME);
+    if (!sheet) throw new Error(`Sheet '${TASK_SHEET_NAME}' not found.`);
+    
+    const taskTrimmed = taskName.trim();
+    const lastRow = sheet.getLastRow();
+    if (lastRow > 1) {
+      const existingTasks = sheet.getRange(2, 1, lastRow - 1, 1).getValues().flat();
+      if (existingTasks.includes(taskTrimmed)) {
+         return { success: false, message: 'มีภารกิจนี้อยู่แล้วในฐานข้อมูล' };
+      }
+    }
+    
+    sheet.appendRow([taskTrimmed]);
+    return { success: true, message: 'เพิ่มภารกิจลงฐานข้อมูลสำเร็จ' };
+  } catch (e) {
+    console.error('Error in addTaskOption:', e.toString());
+    return { success: false, message: `เกิดข้อผิดพลาด: ${e.message}` };
+  }
+}
+
+function deleteTaskOption(taskName) {
+  try {
+    if (!taskName) {
+      return { success: false, message: 'ไม่ได้ระบุภารกิจที่ต้องการลบ' };
+    }
+    const sheet = SpreadsheetApp.openById(SHEET_ID).getSheetByName(TASK_SHEET_NAME);
+    if (!sheet) throw new Error(`Sheet '${TASK_SHEET_NAME}' not found.`);
+    
+    const data = sheet.getDataRange().getValues();
+    const rowIndex = data.findIndex(row => row[0] === taskName);
+
+    if (rowIndex !== -1) {
+      sheet.deleteRow(rowIndex + 1);
+      return { success: true, message: 'ลบภารกิจออกจากฐานข้อมูลสำเร็จ' };
+    } else {
+      return { success: false, message: 'ไม่พบภารกิจที่ต้องการลบ' };
+    }
+  } catch (e) {
+    console.error('Error in deleteTaskOption:', e.toString());
+    return { success: false, message: `เกิดข้อผิดพลาด: ${e.message}` };
+  }
+}
+// ====================================================================
+// ==================== ฟังก์ชันจัดการการตั้งค่าระบบ ====================
+// ====================================================================
+
+function saveLogo(base64Data) {
+  try {
+    if (!base64Data || !base64Data.includes('base64,')) {
+      throw new Error('ไม่มีข้อมูลรูปภาพสำหรับบันทึก');
+    }
+    const fileName = 'system_logo.png';
+    const match = base64Data.match(/data:(.+);base64,(.+)/);
+    const mimeType = match[1];
+    const base64Content = match[2];
+    const fileBlob = Utilities.newBlob(Utilities.base64Decode(base64Content), mimeType, fileName);
+    const folder = DriveApp.getFolderById(SIGNATURE_FOLDER_ID);
+    const existingFiles = folder.getFilesByName(fileName);
+    while (existingFiles.hasNext()) {
+      existingFiles.next().setTrashed(true);
+    }
+    const file = folder.createFile(fileBlob);
+    file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+    PropertiesService.getScriptProperties().setProperty('logoFileId', file.getId());
+    return { success: true, message: 'บันทึกโลโก้สำเร็จ!' };
+  } catch (e) {
+    console.error(`Error in saveLogo: ${e.toString()}`);
+    return { success: false, message: `เกิดข้อผิดพลาดในการบันทึกโลโก้: ${e.message}` };
+  }
+}
+
+function getLogoUrl() {
+  try {
+    const fileId = PropertiesService.getScriptProperties().getProperty('logoFileId');
+    return getDataUrl(fileId);
+  } catch (e) {
+    console.error(`Error in getLogoUrl: ${e.toString()}`);
+    return null;
+  }
+}
+
+function testDriveApi() {
+  try {
+    Logger.log('Type of Drive: ' + typeof Drive);
+    Logger.log('Type of Drive.Files: ' + typeof Drive.Files);
+    Logger.log('Type of Drive.Files.insert: ' + typeof Drive.Files.insert);
+  } catch (e) {
+    Logger.log('Error during test: ' + e.toString());
+  }
+}
+
+function getDataUrl(id) {
+  try {
+    if (!id) return null;
+    const file = DriveApp.getFileById(id);
+    // แก้จาก getThumbnail().copyBlob() เป็น getBlob()
+    const bytes = Utilities.base64Encode(file.getBlob().getBytes()); 
+    const type = file.getMimeType();
+    return {
+      bytes: bytes,
+      type: type
+    };
+  } catch (e) {
+    console.error(`Error in getDataUrl: ${e.toString()}`);
+    return null;
+  }
+}
+// ====================================================================
+// ==================== ฟังก์ชันจัดการการตั้งค่าพื้นหลัง ====================
+// ====================================================================
+
+function saveLoginBackground(setting) {
+  try {
+    if (!setting || !setting.type) {
+      throw new Error('ข้อมูลการตั้งค่าไม่ถูกต้อง');
+    }
+
+    let propValue;
+    // ตรวจสอบว่ามีไฟล์ภาพส่งมาหรือไม่
+    if (setting.type === 'image' && setting.data && setting.data.includes('base64,')) {
+      const fileName = 'login_background.gif';
+      const match = setting.data.match(/data:(.+);base64,(.+)/);
+      const mimeType = match[1];
+      const base64Content = match[2];
+      const fileBlob = Utilities.newBlob(Utilities.base64Decode(base64Content), mimeType, fileName);
+      const folder = DriveApp.getFolderById(SIGNATURE_FOLDER_ID); // ใช้โฟลเดอร์เดียวกับลายเซ็น/โลโก้
+      
+      // ลบไฟล์เก่า (ถ้ามี)
+      const existingFiles = folder.getFilesByName(fileName);
+      while (existingFiles.hasNext()) {
+        existingFiles.next().setTrashed(true);
+      }
+      
+      const file = folder.createFile(fileBlob);
+      file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+      
+      // บันทึกเฉพาะ File ID และประเภท
+      propValue = JSON.stringify({ type: 'image', value: file.getId() });
+
+    } else if (setting.type === 'color') {
+      // บันทึกรหัสสีและประเภท
+      propValue = JSON.stringify({ type: 'color', value: setting.value });
+    } else {
+      // ถ้าเลือกรูปภาพแต่ไม่มีการอัปโหลดใหม่ ให้ใช้ค่าเดิม
+       const existingProp = PropertiesService.getScriptProperties().getProperty('loginBackground');
+       if(existingProp && JSON.parse(existingProp).type === 'image'){
+         propValue = existingProp;
+       } else {
+         // Fallback to color if something went wrong
+         propValue = JSON.stringify({ type: 'color', value: '#FFFFFF' }); // Default color
+       }
+    }
+    
+    PropertiesService.getScriptProperties().setProperty('loginBackground', propValue);
+    return { success: true, message: 'บันทึกการตั้งค่าพื้นหลังสำเร็จ!' };
+
+  } catch (e) {
+    console.error(`Error in saveLoginBackground: ${e.toString()}`);
+    return { success: false, message: `เกิดข้อผิดพลาดในการบันทึก: ${e.message}` };
+  }
+}
+
+function getLoginBackground() {
+  try {
+    const prop = PropertiesService.getScriptProperties().getProperty('loginBackground');
+    if (!prop) return null;
+
+    const setting = JSON.parse(prop);
+    if (setting.type === 'image') {
+      // ถ้าเป็นรูปภาพ ให้สร้าง data URL จาก File ID
+      const imageData = getDataUrl(setting.value); // ใช้ฟังก์ชัน getDataUrl ที่มีอยู่แล้ว
+      return { type: 'image', value: `data:${imageData.type};base64,${imageData.bytes}` };
+    }
+    
+    // ถ้าเป็นสี ก็ส่งค่ากลับไปตรงๆ
+    return setting;
+  } catch (e) {
+    console.error(`Error in getLoginBackground: ${e.toString()}`);
+    return null;
+  }
+}
+
+function analyzeFullSystemDataWithGemini() {
+  try {
+    const API_KEY = PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY');
+    if (!API_KEY) {
+      throw new Error("ไม่พบ Gemini API Key ใน Script Properties");
+    }
+
+    // --- Step 1: ดึงข้อมูลจากทั้ง 3 ชีต ---
+    const allUsers = _getUsersFromSheet();
+    const userMap = new Map(allUsers.map(user => [user.UserID, user]));
+
+    const otSheet = SpreadsheetApp.openById(SHEET_ID).getSheetByName(OVERTIME_REQUEST_SHEET_NAME);
+    const otData = otSheet.getDataRange().getValues();
+    const otHeaders = otData.shift();
+    const otRequests = otData.map(row => {
+      const request = {};
+      otHeaders.forEach((h, i) => request[h] = row[i]);
+      return request;
+    });
+
+    const taskSheet = SpreadsheetApp.openById(SHEET_ID).getSheetByName(TASK_SHEET_NAME);
+    const allTasks = taskSheet.getRange(2, 1, taskSheet.getLastRow() - 1, 1).getValues().flat();
+
+    // --- Step 2: "Join" ข้อมูลคำขอ OT กับข้อมูลผู้ใช้ ---
+    // เพื่อให้แต่ละคำขอมีข้อมูลแผนกและตำแหน่งติดไปด้วย
+    const joinedData = otRequests.map(req => {
+      const user = userMap.get(req.UserID);
+      return {
+        ...req,
+        Department: user ? user.Department : 'N/A',
+        Position: user ? user.Position : 'N/A'
+      };
+    });
+    
+    // แปลงข้อมูลที่ Join แล้วเป็น CSV
+    const joinedHeaders = ["RequestID", "UserID", "RequestDate", "OverTimeStart", "OverTimeEnd", "TotalHours", "Reason", "ApprovalStatus", "Department", "Position"];
+    const dataAsCsv = joinedData.map(row => 
+        joinedHeaders.map(header => `"${row[header]}"`).join(',')
+    ).join('\n');
+
+
+    // --- Step 3: สร้าง Prompt สำหรับการวิเคราะห์เชิงลึก ---
+    const prompt = `
+      คุณคือสุดยอดนักวิเคราะห์ข้อมูล (Data Analyst) ของหน่วยงานราชการไทย
+      โปรดวิเคราะห์ข้อมูลการทำงานล่วงเวลา (OT) ที่ได้จากการรวมข้อมูลผู้ใช้งานและข้อมูลคำขอ OT
+      
+      Headers: ${joinedHeaders.join(',')}
+      Data:
+      ${dataAsCsv}
+
+       รายการภารกิจทั้งหมดที่มีคือ: ${allTasks.join(', ')}
+
+      **โปรดวิเคราะห์และสรุปผลอย่างละเอียดในประเด็นต่อไปนี้:**
+      1.  **สรุปภาพรวมผู้บริหาร (Executive Summary):** สรุปแนวโน้มหลักๆ และสิ่งที่น่าสนใจที่สุดจากการวิเคราะห์ทั้งหมดใน 2-3 ประโยค
+      2.  **การกระจายตัวของ OT ตามกลุ่ม/ฝ่าย (OT Distribution by Department):** ระบุ 3 กลุ่ม/ฝ่ายแรกที่มีชั่วโมง OT รวมสูงสุด และบอกว่าแต่ละกลุ่ม/ฝ่ายใช้เวลาไปกับภารกิจหลักๆ อะไร
+      3.  **ภารกิจยอดนิยม (Top OT Tasks):** ระบุ 3 ภารกิจแรกที่ทำให้เกิด OT บ่อยที่สุด พร้อมบอกจำนวนชั่วโมงรวมของแต่ละภารกิจ
+      4.  **ข้อเสนอแนะ (Recommendations):** จากข้อมูลทั้งหมด ให้เสนอแนะ 1-2 ข้อที่หน่วยงานสามารถนำไปพิจารณาเพื่อปรับปรุงการทำงานหรือบริหารจัดการภาระงานได้
+
+      **สำคัญมาก:** โปรดตอบกลับเป็น JSON object เท่านั้น ห้ามมีข้อความอื่นหรือ markdown formatting ใดๆ นำหน้าหรือต่อท้าย
+      โดยใช้โครงสร้างดังนี้:
+      {
+        "executiveSummary": "สรุปภาพรวม...",
+        "otByDepartment": [
+          { "department": "ชื่อกลุ่ม/ฝ่าย", "totalHours": <ชั่วโมงรวม>, "topTask": "ภารกิจหลัก" },
+          { "department": "ชื่อกลุ่ม/ฝ่าย", "totalHours": <ชั่วโมงรวม>, "topTask": "ภารกิจหลัก" }
+        ],
+        "topTasks": [
+          { "task": "ชื่อภารกิจ", "totalHours": <ชั่วโมงรวม>, "requestCount": <จำนวนครั้ง> },
+          { "task": "ชื่อภารกิจ", "totalHours": <ชั่วโมงรวม>, "requestCount": <จำนวนครั้ง> }
+        ],
+        "recommendations": [
+          "ข้อเสนอแนะที่ 1...",
+          "ข้อเสนอแนะที่ 2..."
+        ]
+      }
+    `;
+
+    // --- Step 4: เรียก Gemini API และ trả về kết quả ---
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${API_KEY}`;
+    const payload = { contents: [{ parts: [{ "text": prompt }] }] };
+    const options = { method: 'post', contentType: 'application/json', payload: JSON.stringify(payload), muteHttpExceptions: true };
+
+    const response = UrlFetchApp.fetch(url, options);
+    const responseText = response.getContentText();
+    const jsonResponse = JSON.parse(responseText);
+    
+    if (jsonResponse.error) {
+        throw new Error(`Gemini API Error: ${jsonResponse.error.message}`);
+    }
+
+    const analysisResultText = jsonResponse.candidates[0].content.parts[0].text;
+
+    // ทำความสะอาดผลลัพธ์เพื่อให้เป็น JSON ที่ถูกต้อง
+    let cleanedJsonText = analysisResultText.trim().replace(/^```json\s*|```\s*$/g, '');
+    
+    return JSON.parse(cleanedJsonText);
+
+  } catch (e) {
+    console.error('Error in analyzeFullSystemDataWithGemini:', e.toString(), e.stack);
+    return { error: `เกิดข้อผิดพลาดในการวิเคราะห์ข้อมูล: ${e.message}` };
+  }
+}
+/**
+ * รวบรวมและคำนวณข้อมูลสรุปสำหรับ Commander Dashboard โดยเฉพาะ
+ * จะคำนวณข้อมูล Top 5 และ Time Trend ใน Apps Script และใช้ Gemini สำหรับการสรุปภาพรวม
+ * @returns {object} ข้อมูลที่พร้อมสำหรับนำไปสร้าง Dashboard
+ */
+function getCommanderDashboardData() {
+  try {
+    // --- ดึงข้อมูลพื้นฐาน ---
+    const allUsers = _getUsersFromSheet();
+    const userMap = new Map(allUsers.map(user => [user.UserID, user]));
+    const otSheet = SpreadsheetApp.openById(SHEET_ID).getSheetByName(OVERTIME_REQUEST_SHEET_NAME);
+    const otData = otSheet.getDataRange().getValues();
+    const otHeaders = otData[0];
+    const requests = otData.slice(1).map(row => {
+      const request = {};
+      otHeaders.forEach((h, i) => request[h] = row[i]);
+      return request;
+    });
+
+    // --- 1. คำนวณ 5 อันดับบุคคลที่มี OT สูงสุด ---
+    const hoursByUser = {};
+    requests.forEach(req => {
+      const userId = req.UserID;
+      const hours = parseFloat(req.TotalHours) || 0;
+      if (!hoursByUser[userId]) {
+        hoursByUser[userId] = 0;
+      }
+      hoursByUser[userId] += hours;
+    });
+
+    const sortedUsers = Object.keys(hoursByUser)
+      .map(userId => ({
+        userId: userId,
+        name: userMap.has(userId) ? `${userMap.get(userId).FirstName} ${userMap.get(userId).LastName}` : `ไม่พบชื่อ (ID: ${userId})`,
+        hours: hoursByUser[userId]
+      }))
+      .sort((a, b) => b.hours - a.hours);
+      
+    const topEmployees = sortedUsers.slice(0, 5);
+
+    // --- 2. คำนวณแนวโน้ม OT รายเดือน ---
+    const hoursByMonth = {};
+    requests.forEach(req => {
+      const date = new Date(req.RequestDate);
+      if (isNaN(date.getTime())) return;
+      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+      const hours = parseFloat(req.TotalHours) || 0;
+      if (!hoursByMonth[monthKey]) {
+        hoursByMonth[monthKey] = 0;
+      }
+      hoursByMonth[monthKey] += hours;
+    });
+    
+    const sortedMonths = Object.keys(hoursByMonth).sort();
+    const timeTrend = {
+      labels: sortedMonths.map(monthKey => {
+        const [year, month] = monthKey.split('-');
+        return `${thaiMonths[parseInt(month, 10) - 1]} ${parseInt(year, 10) + 543}`;
+      }),
+      data: sortedMonths.map(monthKey => hoursByMonth[monthKey])
+    };
+
+    // --- 3. (ทางเลือก) ใช้ Gemini สรุปภาพรวมสั้นๆ ---
+    // ส่วนนี้สามารถเพิ่ม prompt เพื่อสรุปจากข้อมูล topEmployees และ timeTrend ได้ถ้าต้องการ
+
+    return {
+      success: true,
+      topEmployees: topEmployees,
+      timeTrend: timeTrend
+    };
+
+  } catch (e) {
+    console.error('Error in getCommanderDashboardData:', e.toString());
+    return { success: false, error: e.message };
+  }
+}
+/**
+ * [โค้ดอัปเกรด] - สร้าง Dashboard แรกเริ่มแบบสมบูรณ์สำหรับผู้บริหาร (เพิ่มข้อมูลรายบุคคล)
+ * @returns {object} ออบเจ็กต์ที่มีบทสรุปและข้อมูลกราฟหลายชุด
+ */
+function getInitialAiDashboardData() {
+  try {
+    const API_KEY = PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY');
+    if (!API_KEY) throw new Error("ไม่พบ Gemini API Key");
+
+    // 1. คำนวณข้อมูลสรุปในมิติต่างๆ
+    const hoursByDept = _aggregateHoursByGroup('Department', 5);
+    hoursByDept.datasets[0].label = 'ชั่วโมง OT ตามกลุ่ม/ฝ่าย';
+    
+    const hoursByTask = _aggregateHoursByGroup('Reason', 5);
+    hoursByTask.datasets[0].label = 'ชั่วโมง OT ตามภารกิจ';
+
+    // *** เพิ่มส่วนนี้เข้ามา ***
+    const hoursByUser = _aggregateHoursByUser(5);
+    hoursByUser.datasets[0].label = 'ชั่วโมง OT รายบุคคล';
+    
+    // 2. สร้าง Prompt ใหม่ที่ละเอียดขึ้น
+    const analysisPrompt = `
+      คุณคือที่ปรึกษาผู้เชี่ยวชาญของหน่วยงานราชการ
+      จากข้อมูลสรุปการทำงานล่วงเวลา (OT) 3 ส่วนนี้:
+      1. OT 5 อันดับตามกลุ่ม/ฝ่าย: ${JSON.stringify(hoursByDept.labels.map((label, index) => ({ฝ่าย: label, ชั่วโมง: hoursByDept.datasets[0].data[index]})))}
+      2. OT 5 อันดับตามภารกิจ: ${JSON.stringify(hoursByTask.labels.map((label, index) => ({ภารกิจ: label, ชั่วโมง: hoursByTask.datasets[0].data[index]})))}
+      3. OT 5 อันดับตามบุคคล: ${JSON.stringify(hoursByUser.labels.map((label, index) => ({บุคคล: label, ชั่วโมง: hoursByUser.datasets[0].data[index]})))}
+
+      โปรดเขียนรายงานสั้นๆ สำหรับผู้บริหาร โดยประกอบด้วย:
+      - **สรุปภาพรวม:** บอกถึงแนวโน้มที่สำคัญที่สุด 1-2 ประเด็น
+      - **ภาระงานบุคคล:** วิเคราะห์ว่าภาระงานกระจุกตัวที่บุคคลใดหรือไม่
+      - **ข้อเสนอแนะ:** ให้ข้อเสนอแนะที่นำไปปฏิบัติได้จริง 2 ข้อเพื่อใช้ในการบริหารจัดการ
+
+      สำคัญ: โปรดเขียนให้กระชับ ชัดเจน และตรงประเด็น
+    `;
+
+    // 3. เรียกใช้ AI เพื่อสร้างบทสรุป
+    const summaryText = _getSummaryFromData({}, analysisPrompt, API_KEY);
+
+    // 4. ประกอบผลลัพธ์เพื่อส่งกลับไปหน้าเว็บ
+    return {
+      text: summaryText,
+      charts: [
+        { chartType: 'horizontalBar', chartData: hoursByUser }, // กราฟรายบุคคล
+        { chartType: 'bar', chartData: hoursByDept },        // กราฟตามฝ่าย
+        { chartType: 'pie', chartData: hoursByTask }         // กราฟตามภารกิจ
+      ]
+    };
+  } catch (e) {
+    console.error('Error in getInitialAiDashboardData:', e.toString());
+    return { text: `เกิดข้อผิดพลาดในการสร้าง Dashboard: ${e.message}`, charts: [] };
+  }
+}
+
+/**
+ * [ฟังก์ชันใหม่] - ฟังก์ชันคำนวณข้อมูล: สรุปชั่วโมงตามผู้ใช้งาน
+ * @param {number|null} limit - จำนวนอันดับสูงสุดที่ต้องการ
+ */
+function _aggregateHoursByUser(limit = null) {
+  const data = _getJoinedData();
+  const results = {};
+  data.forEach(req => {
+    const key = req['FullName'] || 'ไม่พบชื่อ';
+    const hours = parseFloat(req.TotalHours) || 0;
+    if (!results[key]) {
+      results[key] = 0;
+    }
+    results[key] += hours;
+  });
+
+  let sortedResults = Object.entries(results).sort(([, a], [, b]) => b - a);
+
+  if (limit && sortedResults.length > limit) {
+    sortedResults = sortedResults.slice(0, limit);
+  }
+  
+  // เรียงจากน้อยไปมากเพื่อให้กราฟแนวนอนแสดงผลถูกต้อง (มากสุดอยู่บน)
+  sortedResults.reverse();
+
+  const labels = sortedResults.map(item => item[0]);
+  const values = sortedResults.map(item => item[1]);
+
+  return { labels: labels, datasets: [{ label: 'ชั่วโมง OT รายบุคคล', data: values }] };
+}
+function askGeminiAboutOtData(userQuestion) {
+  try {
+    const API_KEY = PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY');
+    if (!API_KEY) throw new Error("ไม่พบ Gemini API Key");
+
+    // --- 1. ตีความคำสั่ง (Intent Recognition) ---
+    const intent = _getIntentFromQuestion(userQuestion, API_KEY);
+    
+    let aggregatedData = null;
+    let analysisPrompt = "";
+    
+    // --- 2. เรียกใช้ฟังก์ชันคำนวณข้อมูลตาม Intent ---
+    switch (intent.command) {
+      case "HOURS_BY_DEPARTMENT":
+        aggregatedData = _aggregateHoursByGroup('Department');
+        analysisPrompt = "จากข้อมูลชั่วโมงการทำงานล่วงเวลาที่สรุปตามกลุ่ม/ฝ่ายนี้ โปรดเขียนสรุปเชิงวิเคราะห์สำหรับผู้บริหารถึงแนวโน้มที่น่าสนใจ";
+        break;
+      case "HOURS_BY_TASK":
+        aggregatedData = _aggregateHoursByGroup('Reason');
+        analysisPrompt = "จากข้อมูลชั่วโมงการทำงานล่วงเวลาที่สรุปตามภารกิจนี้ โปรดวิเคราะห์ว่าภารกิจใดที่ใช้เวลามากที่สุด และให้ข้อเสนอแนะเบื้องต้น";
+        break;
+      case "MONTHLY_TREND":
+        aggregatedData = _getMonthlyTrend();
+        analysisPrompt = "จากข้อมูลแนวโน้มการทำงานล่วงเวลารายเดือนนี้ โปรดสรุปภาพรวมและวิเคราะห์ช่วงเวลาที่มีการทำงานล่วงเวลาสูงสุด";
+        break;
+      default: // GENERAL_QUERY หรือถ้าไม่รู้จักคำสั่ง
+        return _handleGeneralQuery(userQuestion, API_KEY);
+    }
+    
+    // --- 3. ให้ AI ช่วยสร้างบทสรุปจากข้อมูลที่คำนวณได้ ---
+    const summary = _getSummaryFromData(aggregatedData, analysisPrompt, API_KEY);
+    
+    // --- 4. ส่งข้อมูลทั้งหมดกลับไปหน้าบ้าน ---
+    return {
+      text: summary,
+      chartData: aggregatedData,
+      chartType: intent.chartType || 'bar' // default to bar chart
+    };
+
+  } catch (e) {
+    console.error('Error in askGeminiAboutOtData:', e.toString());
+    return { text: `เกิดข้อผิดพลาดในการวิเคราะห์: ${e.message}`, chartData: null, chartType: 'none' };
+  }
+}
+
+// ====================================================================
+// ==================== ฟังก์ชัน Helper สำหรับ AI ใหม่ ====================
+// ====================================================================
+
+/**
+ * [ใหม่] - ใช้ Gemini เพื่อตีความคำสั่งของผู้ใช้
+ */
+function _getIntentFromQuestion(userQuestion, apiKey) {
+  const prompt = `
+    วิเคราะห์คำถามของผู้ใช้เกี่ยวกับการทำงานล่วงเวลา (OT) และคืนค่าเป็น JSON object เท่านั้น
+    - command: ประเภทของคำสั่งที่ต้องการข้อมูล
+      - "HOURS_BY_DEPARTMENT": เมื่อผู้ใช้ต้องการข้อมูล OT แยกตามแผนก/ฝ่าย
+      - "HOURS_BY_TASK": เมื่อผู้ใช้ต้องการข้อมูล OT แยกตามภารกิจ
+      - "MONTHLY_TREND": เมื่อผู้ใช้ต้องการดูแนวโน้มรายเดือน
+      - "GENERAL_QUERY": สำหรับคำถามทั่วไปอื่นๆ
+    - chartType: ประเภทของกราฟที่เหมาะสมที่สุด
+      - "bar": กราฟแท่ง (สำหรับเปรียบเทียบ)
+      - "pie": กราฟวงกลม (สำหรับสัดส่วน)
+      - "line": กราฟเส้น (สำหรับแนวโน้มตามเวลา)
+      - "none": หากไม่ต้องการกราฟ
+
+    ตัวอย่าง:
+    - "ฝ่ายไหนทำ OT เยอะสุด": {"command": "HOURS_BY_DEPARTMENT", "chartType": "bar"}
+    - "ขอกราฟวงกลมสรุปงานแต่ละอย่าง": {"command": "HOURS_BY_TASK", "chartType": "pie"}
+    - "แนวโน้ม OT ช่วง 6 เดือนที่ผ่านมาเป็นยังไง": {"command": "MONTHLY_TREND", "chartType": "line"}
+    - "ช่วยสรุปภาพรวมให้หน่อย": {"command": "GENERAL_QUERY", "chartType": "none"}
+
+    คำถามของผู้ใช้: "${userQuestion}"
+  `;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
+  const payload = { contents: [{ parts: [{ "text": prompt }] }] };
+  const options = { method: 'post', contentType: 'application/json', payload: JSON.stringify(payload), muteHttpExceptions: true };
+  const response = UrlFetchApp.fetch(url, options);
+  const responseText = response.getContentText();
+  const jsonResponse = JSON.parse(responseText);
+  const resultText = jsonResponse.candidates[0].content.parts[0].text.replace(/```json|```/g, "").trim();
+  return JSON.parse(resultText);
+}
+
+/**
+ * [ใหม่] - ใช้ Gemini เพื่อสร้างบทสรุปจากข้อมูลที่ผ่านการคำนวณแล้ว
+ */
+function _getSummaryFromData(data, analysisPrompt, apiKey) {
+  const prompt = `
+    ข้อมูลสรุป (Data): ${JSON.stringify(data)}
+    คำสั่ง (Instruction): ${analysisPrompt}
+    โปรดเขียนคำตอบเป็นภาษาไทยที่กระชับและเหมาะสำหรับผู้บริหาร
+  `;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash-latest:generateContent?key=${apiKey}`;
+  const payload = { contents: [{ parts: [{ "text": prompt }] }] };
+  const options = { method: 'post', contentType: 'application/json', payload: JSON.stringify(payload) };
+  const response = UrlFetchApp.fetch(url, options);
+  const jsonResponse = JSON.parse(response.getContentText());
+  return jsonResponse.candidates[0].content.parts[0].text;
+}
+
+/**
+ * [ใหม่] - จัดการกับคำถามทั่วไป (เหมือนเวอร์ชันเดิมแต่ปรับปรุงเล็กน้อย)
+ */
+function _handleGeneralQuery(userQuestion, apiKey) {
+    const allData = _getJoinedData();
+    const dataAsCsv = _jsonToCsv_(allData); // <--- แก้ไขเป็นฟังก์ชันใหม่
+    const summary = _getSummaryFromData(dataAsCsv, userQuestion, apiKey);
+    return { text: summary, chartData: null, chartType: 'none' };
+}
+/**
+ * [ใหม่] - ฟังก์ชันรวมศูนย์สำหรับดึงและ Join ข้อมูล
+ */
+function _getJoinedData() {
+    const allUsers = _getUsersFromSheet();
+    const userMap = new Map(allUsers.map(user => [user.UserID, user]));
+    const otSheet = SpreadsheetApp.openById(SHEET_ID).getSheetByName(OVERTIME_REQUEST_SHEET_NAME);
+    const otData = otSheet.getDataRange().getValues();
+    const otHeaders = otData.shift();
+    return otData.map(row => {
+      const request = {};
+      otHeaders.forEach((h, i) => request[h] = row[i]);
+      const user = userMap.get(request.UserID);
+      request.Department = user ? user.Department : 'N/A';
+      request.FullName = user ? `${user.FirstName} ${user.LastName}` : 'N/A';
+      return request;
+    });
+}
+
+
+/**
+ * [ใหม่] - ฟังก์ชันคำนวณข้อมูล: สรุปชั่วโมงตามกลุ่ม (เช่น ฝ่าย, ภารกิจ)
+ */
+function _aggregateHoursByGroup(groupingKey) {
+  const data = _getJoinedData();
+  const results = {};
+  data.forEach(req => {
+    const key = req[groupingKey] || 'ไม่ระบุ';
+    const hours = parseFloat(req.TotalHours) || 0;
+    if (!results[key]) {
+      results[key] = 0;
+    }
+    results[key] += hours;
+  });
+  
+  // แปลงเป็นรูปแบบที่ Chart.js เข้าใจ
+  const labels = Object.keys(results);
+  const values = Object.values(results);
+  return { labels: labels, datasets: [{ label: `ชั่วโมง OT ตาม ${groupingKey}`, data: values }] };
+}
+
+/**
+ * [ใหม่] - ฟังก์ชันคำนวณข้อมูล: สรุปแนวโน้มรายเดือน
+ */
+function _getMonthlyTrend() {
+  const data = _getJoinedData();
+  const results = {};
+  const thaiMonths = ["ม.ค.", "ก.พ.", "มี.ค.", "เม.ย.", "พ.ค.", "มิ.ย.", "ก.ค.", "ส.ค.", "ก.ย.", "ต.ค.", "พ.ย.", "ธ.ค."];
+
+  data.forEach(req => {
+    const date = new Date(req.RequestDate);
+    if (isNaN(date.getTime())) return;
+    const monthKey = `${date.getFullYear()}-${String(date.getMonth()).padStart(2, '0')}`; // YYYY-MM
+    const hours = parseFloat(req.TotalHours) || 0;
+    if (!results[monthKey]) {
+      results[monthKey] = 0;
+    }
+    results[monthKey] += hours;
+  });
+
+  const sortedKeys = Object.keys(results).sort();
+  const labels = sortedKeys.map(key => {
+    const [year, month] = key.split('-');
+    return `${thaiMonths[parseInt(month, 10)]} ${parseInt(year, 10) + 543}`;
+  });
+  const values = sortedKeys.map(key => results[key]);
+
+  return { labels: labels, datasets: [{ label: 'ชั่วโมง OT รายเดือน', data: values }] };
+}
+/**
+ * [ใหม่] - ฟังก์ชันสำหรับแปลง Array of Objects (JSON) เป็น CSV String
+ * @param {Array<Object>} items อาร์เรย์ของออบเจ็กต์ที่ต้องการแปลง
+ * @returns {string} ข้อความในรูปแบบ CSV
+ */
+function _jsonToCsv_(items) {
+  if (!items || items.length === 0) {
+    return "";
+  }
+  const headers = Object.keys(items[0]);
+  const replacer = (key, value) => value === null ? '' : value;
+
+  // สร้างแถวข้อมูลโดยแปลงแต่ละค่าให้เป็น string ที่ปลอดภัยสำหรับ CSV
+  let csv = items.map(row => headers.map(fieldName => JSON.stringify(row[fieldName], replacer)).join(','));
+  
+  // เพิ่มแถว header ด้านบนสุด
+  csv.unshift(headers.join(','));
+  
+  // รวมทุกแถวเข้าด้วยกันด้วยการขึ้นบรรทัดใหม่
+  return csv.join('\r\n');
+}
+// ====================================================================
+// ==================== ฟังก์ชันจัดการฐานข้อมูล (ใหม่) ====================
+// ====================================================================
+
+/**
+ * ส่งออกข้อมูลจากชีตที่ระบุเป็นไฟล์ CSV
+ * @param {string} sheetName ชื่อของชีตที่ต้องการส่งออก
+ * @returns {object} ออบเจ็กต์ที่มีเนื้อหา CSV และชื่อไฟล์
+ */
+function handleExport(sheetName) {
+  try {
+    const sheet = SpreadsheetApp.openById(SHEET_ID).getSheetByName(sheetName);
+    if (!sheet) throw new Error(`ไม่พบชีตชื่อ '${sheetName}'`);
+
+    const data = sheet.getDataRange().getValues();
+    if (data.length === 0) {
+      return { csvContent: "", fileName: `${sheetName}_export.csv` };
+    }
+
+    const csvContent = data.map(row =>
+      row.map(cell => {
+        const cellStr = String(cell);
+        // Add quotes if the cell contains a comma, double quote, or newline
+        if (cellStr.includes(',') || cellStr.includes('"') || cellStr.includes('\n')) {
+          return `"${cellStr.replace(/"/g, '""')}"`;
+        }
+        return cellStr;
+      }).join(',')
+    ).join('\n');
+
+    return { csvContent: csvContent, fileName: `${sheetName}_export.csv` };
+  } catch (e) {
+    console.error(`Error in handleExport for sheet "${sheetName}":`, e.toString());
+    throw new Error(`เกิดข้อผิดพลาดในการส่งออกข้อมูล: ${e.message}`);
+  }
+}
+/**
+ * จัดการการนำเข้าไฟล์ CSV ตามชีตที่ระบุ
+ * @param {string} csvContent เนื้อหาจากไฟล์ CSV
+ * @param {string} sheetName ชีตเป้าหมายสำหรับการนำเข้า
+ * @returns {object} ผลลัพธ์การทำงาน
+ */
+function handleImportCsv(csvContent, sheetName) {
+  try {
+    switch (sheetName) {
+      case USER_SHEET_NAME:
+        return importUsers(csvContent);
+      case OVERTIME_REQUEST_SHEET_NAME:
+        return importRequests(csvContent);
+      case TASK_SHEET_NAME:
+        return importTasks(csvContent);
+      default:
+        throw new Error("ไม่รู้จักชีตเป้าหมาย");
+    }
+  } catch (e) {
+    console.error(`Error in handleImportCsv for sheet "${sheetName}":`, e.toString());
+    return { success: false, message: `เกิดข้อผิดพลาด: ${e.message}` };
+  }
+}
+/**
+ * นำเข้าข้อมูลคำขอ OT (มีความสามารถพิเศษในการแปลงชื่อเป็น UserID)
+ */
+function importRequests(csvContent) {
+  const allUsers = _getUsersFromSheet();
+  const userMapByName = new Map(allUsers.map(user => [`${user.FirstName} ${user.LastName}`, user.UserID]));
+
+  const sheet = SpreadsheetApp.openById(SHEET_ID).getSheetByName(OVERTIME_REQUEST_SHEET_NAME);
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+
+  const rows = Utilities.parseCsv(csvContent);
+  const csvHeaders = rows.shift();
+  const newRowsData = [];
+
+  rows.forEach((row, index) => {
+    const rowData = {};
+    csvHeaders.forEach((header, i) => {
+      rowData[header] = row[i];
+    });
+
+    // --- ส่วนตรรกะพิเศษ ---
+    const fullName = rowData['FullName']; // สมมติว่าใน CSV มีคอลัมน์ชื่อ 'FullName'
+    const userId = userMapByName.get(fullName);
+
+    if (!userId) {
+      console.warn(`Skipping row ${index + 2}: User "${fullName}" not found.`);
+      return; // ข้ามแถวนี้ไปถ้าไม่พบผู้ใช้
+    }
+    
+    // ตั้งค่าเริ่มต้นถ้าไม่มีข้อมูล
+    if (!rowData['ApprovalStatus']) {
+      rowData['ApprovalStatus'] = 'Pending Supervisor Approval';
+    }
+
+    // สร้างแถวใหม่ตามลำดับของชีต
+    const newRow = headers.map(header => {
+        if (header === 'UserID') return userId;
+        // สามารถเพิ่มการแปลงข้อมูลอื่นๆ ได้ที่นี่
+        return rowData[header] || '';
+    });
+    newRowsData.push(newRow);
+  });
+  
+  if (newRowsData.length > 0) {
+    sheet.getRange(sheet.getLastRow() + 1, 1, newRowsData.length, headers.length).setValues(newRowsData);
+  }
+
+  return { success: true, message: `นำเข้าข้อมูลคำขอ OT สำเร็จ ${newRowsData.length} รายการ` };
+}
+// (ต้องสร้างฟังก์ชัน importUsers และ importTasks ที่คล้ายกันแต่ไม่มีตรรกะพิเศษด้วย)
+/**
+ * จัดการการนำเข้าไฟล์ CSV ตามชีตที่ระบุ (เวอร์ชันสมบูรณ์)
+ * @param {string} csvContent เนื้อหาจากไฟล์ CSV
+ * @param {string} sheetName ชีตเป้าหมายสำหรับการนำเข้า
+ * @returns {object} ผลลัพธ์การทำงาน
+ */
+function handleImportCsv(csvContent, sheetName) {
+  try {
+    if (!csvContent || csvContent.trim() === '') {
+      throw new Error("ไฟล์ CSV ว่างเปล่า");
+    }
+    // Utilities.parseCsv ต้องการอย่างน้อยหนึ่งแถว
+    const allRows = Utilities.parseCsv(csvContent);
+    if (allRows.length < 2) {
+       return { success: true, message: `นำเข้าข้อมูลสำเร็จ (0 รายการ) เนื่องจากไฟล์มีเพียงหัวข้อ` };
+    }
+
+    switch (sheetName) {
+      case USER_SHEET_NAME:
+        return importUsers(allRows);
+      case OVERTIME_REQUEST_SHEET_NAME:
+        return importRequests(allRows);
+      case TASK_SHEET_NAME:
+        return importTasks(allRows);
+      default:
+        throw new Error("ไม่รู้จักชีตเป้าหมาย");
+    }
+  } catch (e) {
+    console.error(`Error in handleImportCsv for sheet "${sheetName}":`, e.toString(), e.stack);
+    return { success: false, message: `เกิดข้อผิดพลาด: ${e.message}` };
+  }
+}
+
+/**
+ * นำเข้าข้อมูลผู้ใช้งาน (tb_User) โดยอิงจากชื่อคอลัมน์ (Header)
+ * @param {Array<Array<string>>} rows ข้อมูลทั้งหมดจาก CSV ที่ผ่านการ parse แล้ว
+ */
+function importUsers(rows) {
+  const sheet = SpreadsheetApp.openById(SHEET_ID).getSheetByName(USER_SHEET_NAME);
+  const sheetHeaders = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const csvHeaders = rows.shift(); // ดึงหัวข้อออกจาก CSV
+
+  // สร้างแผนที่เพื่อหาว่าหัวข้อใน CSV อยู่คอลัมน์ที่เท่าไหร่
+  const csvHeaderMap = csvHeaders.reduce((map, header, index) => {
+    map[header.trim()] = index;
+    return map;
+  }, {});
+
+  // เตรียมข้อมูลแถวใหม่ตามลำดับของ Google Sheet
+  const newRowsData = rows.map(csvRow => {
+    return sheetHeaders.map(sheetHeader => {
+      const csvIndex = csvHeaderMap[sheetHeader.trim()];
+      return csvIndex !== undefined ? csvRow[csvIndex] : ''; // ถ้ามีข้อมูลใน CSV ก็ดึงมาใส่, ถ้าไม่ก็เว้นว่าง
+    });
+  });
+
+  if (newRowsData.length > 0) {
+    sheet.getRange(sheet.getLastRow() + 1, 1, newRowsData.length, sheetHeaders.length).setValues(newRowsData);
+    CacheService.getScriptCache().remove('all_users');
+  }
+  
+  return { success: true, message: `นำเข้าข้อมูลผู้ใช้งานสำเร็จ ${newRowsData.length} รายการ` };
+}
+
+/**
+ * นำเข้าข้อมูลภารกิจ (tb_Tasks) โดยอิงจากชื่อคอลัมน์ (Header)
+ * @param {Array<Array<string>>} rows ข้อมูลทั้งหมดจาก CSV ที่ผ่านการ parse แล้ว
+ */
+function importTasks(rows) {
+  const sheet = SpreadsheetApp.openById(SHEET_ID).getSheetByName(TASK_SHEET_NAME);
+  const sheetHeaders = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const csvHeaders = rows.shift();
+
+  const csvHeaderMap = csvHeaders.reduce((map, header, index) => {
+    map[header.trim()] = index;
+    return map;
+  }, {});
+  
+  const newRowsData = rows.map(csvRow => {
+    return sheetHeaders.map(sheetHeader => {
+      const csvIndex = csvHeaderMap[sheetHeader.trim()];
+      return csvIndex !== undefined ? csvRow[csvIndex] : '';
+    });
+  });
+  
+  if (newRowsData.length > 0) {
+    sheet.getRange(sheet.getLastRow() + 1, 1, newRowsData.length, sheetHeaders.length).setValues(newRowsData);
+  }
+  
+  return { success: true, message: `นำเข้าข้อมูลภารกิจสำเร็จ ${newRowsData.length} รายการ` };
+}
+/**
+ * นำเข้าข้อมูลคำขอ OT (มีความสามารถพิเศษ) โดยอิงจากชื่อคอลัมน์ (Header)
+ * @param {Array<Array<string>>} rows ข้อมูลทั้งหมดจาก CSV
+ */
+function importRequests(rows) {
+  // สร้างแผนที่สำหรับแปลงชื่อเต็ม -> UserID
+  const allUsers = _getUsersFromSheet();
+  const userMapByName = new Map(allUsers.map(user => [`${user.FirstName} ${user.LastName}`, user.UserID]));
+
+  const sheet = SpreadsheetApp.openById(SHEET_ID).getSheetByName(OVERTIME_REQUEST_SHEET_NAME);
+  const sheetHeaders = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const csvHeaders = rows.shift();
+
+  const csvHeaderMap = csvHeaders.reduce((map, header, index) => {
+    map[header.trim()] = index;
+    return map;
+  }, {});
+
+  const newRowsData = [];
+  rows.forEach((csvRow, index) => {
+    // 1. แปลงแถว CSV เป็น Object เพื่อให้ง่ายต่อการจัดการ
+    let rowData = {};
+    csvHeaders.forEach((header, i) => {
+      rowData[header.trim()] = csvRow[i];
+    });
+
+    // 2. ทำตรรกะพิเศษ (แปลงชื่อเป็น ID และตั้งค่าเริ่มต้น)
+    // **สำคัญ**: CSV ต้องมีคอลัมน์ชื่อ "FullName"
+    const fullName = rowData['FullName']; 
+    const userId = userMapByName.get(fullName);
+
+    if (!userId) {
+      console.warn(`Skipping row ${index + 2}: User "${fullName}" not found.`);
+      return; // ข้ามแถวนี้ไปถ้าไม่พบผู้ใช้
+    }
+    
+    // ตั้งค่า UserID และสถานะเริ่มต้น
+    rowData['UserID'] = userId;
+    if (!rowData['ApprovalStatus']) {
+      rowData['ApprovalStatus'] = 'Pending Supervisor Approval';
+    }
+    
+    // 3. สร้างแถวใหม่ตามลำดับของ Google Sheet
+    const newSheetRow = sheetHeaders.map(sheetHeader => {
+      return rowData[sheetHeader.trim()] || '';
+    });
+    newRowsData.push(newSheetRow);
+  });
+  
+  if (newRowsData.length > 0) {
+    sheet.getRange(sheet.getLastRow() + 1, 1, newRowsData.length, sheetHeaders.length).setValues(newRowsData);
+  }
+
+  return { success: true, message: `นำเข้าข้อมูลคำขอ OT สำเร็จ ${newRowsData.length} รายการ` };
+}
+// ====================================================================
+// ==================== Fiscal Year Reset Function ====================
+// ====================================================================
+
+/**
+ * สำรองข้อมูล tb_OverTimeRequest และ tb_Tasks ไปยังโฟลเดอร์ใหม่
+ * จากนั้นล้างข้อมูลในชีตทั้งสองเพื่อเตรียมพร้อมสำหรับปีงบประมาณใหม่
+ * @returns {object} ผลลัพธ์การทำงาน
+ */
+function resetDataForNewFiscalYear() {
+  try {
+    const spreadsheet = SpreadsheetApp.openById(SHEET_ID);
+    const requestSheet = spreadsheet.getSheetByName(OVERTIME_REQUEST_SHEET_NAME);
+    const taskSheet = spreadsheet.getSheetByName(TASK_SHEET_NAME);
+
+    if (!requestSheet || !taskSheet) {
+      throw new Error("ไม่พบชีต tb_OverTimeRequest หรือ tb_Tasks");
+    }
+
+    // 1. สร้างโฟลเดอร์สำรองข้อมูล
+    const mainBackupFolder = DriveApp.getFolderById(BACKUP_FOLDER_ID);
+    const fiscalYear = new Date().getFullYear() + 543; // ปี พ.ศ. ปัจจุบัน
+    const backupFolderName = `ข้อมูลสำรองสิ้นปีงบประมาณ ${fiscalYear}`;
+    const newBackupFolder = mainBackupFolder.createFolder(backupFolderName);
+
+    // 2. สำรองข้อมูล tb_OverTimeRequest
+    const requestBackupSS = SpreadsheetApp.create(`สำรองข้อมูล_tb_OverTimeRequest_${fiscalYear}`);
+    const requestBackupSheet = requestBackupSS.getSheets()[0];
+    const requestData = requestSheet.getDataRange().getValues();
+    if (requestData.length > 0) {
+      requestBackupSheet.getRange(1, 1, requestData.length, requestData[0].length).setValues(requestData);
+    }
+    DriveApp.getFileById(requestBackupSS.getId()).moveTo(newBackupFolder);
+
+    // 3. สำรองข้อมูล tb_Tasks
+    const taskBackupSS = SpreadsheetApp.create(`สำรองข้อมูล_tb_Tasks_${fiscalYear}`);
+    const taskBackupSheet = taskBackupSS.getSheets()[0];
+    const taskData = taskSheet.getDataRange().getValues();
+    if (taskData.length > 0) {
+      taskBackupSheet.getRange(1, 1, taskData.length, taskData[0].length).setValues(taskData);
+    }
+    DriveApp.getFileById(taskBackupSS.getId()).moveTo(newBackupFolder);
+
+    // 4. ล้างข้อมูลในชีตเดิม (เว้นบรรทัดแรกที่เป็น Header)
+    if (requestSheet.getLastRow() > 1) {
+      requestSheet.getRange(2, 1, requestSheet.getLastRow() - 1, requestSheet.getLastColumn()).clearContent();
+    }
+    if (taskSheet.getLastRow() > 1) {
+      taskSheet.getRange(2, 1, taskSheet.getLastRow() - 1, taskSheet.getLastColumn()).clearContent();
+    }
+
+    const successMessage = `สำรองและรีเซ็ตข้อมูลสำเร็จ! ไฟล์สำรองถูกเก็บไว้ในโฟลเดอร์: ${backupFolderName}`;
+    console.log(successMessage);
+    return { success: true, message: successMessage };
+
+  } catch (e) {
+    console.error("Error in resetDataForNewFiscalYear:", e.toString(), e.stack);
+    return { success: false, message: `เกิดข้อผิดพลาด: ${e.message}` };
+  }
+}
+// ========== START: Holiday Management Functions ==========
+
+/**
+ * ดึงข้อมูลวันหยุดทั้งหมดเพื่อใช้ในหน้าจัดการ
+ */
+function getHolidays() {
+  try {
+    const sheet = SpreadsheetApp.openById(SHEET_ID).getSheetByName(HOLIDAY_SHEET_NAME);
+    if (!sheet || sheet.getLastRow() < 2) return [];
+    const data = sheet.getRange(2, 1, sheet.getLastRow() - 1, 3).getValues();
+    const holidays = data.map(row => ({
+      HolidayID: row[0],
+      HolidayDate: row[1],
+      HolidayName: row[2]
+    }));
+    // เรียงวันที่จากน้อยไปมาก
+    holidays.sort((a, b) => new Date(a.HolidayDate) - new Date(b.HolidayDate));
+    return holidays;
+  } catch (e) {
+    console.error("Error in getHolidays:", e);
+    return [];
+  }
+}
+
+/**
+ * ดึงเฉพาะวันที่ของวันหยุดทั้งหมดเพื่อใช้กับฟอร์ม OT
+ */
+function getHolidayDates() {
+  try {
+    const sheet = SpreadsheetApp.openById(SHEET_ID).getSheetByName(HOLIDAY_SHEET_NAME);
+    if (!sheet || sheet.getLastRow() < 2) return [];
+    // ดึงข้อมูลเฉพาะคอลัมน์ที่ 2 (HolidayDate)
+    const dates = sheet.getRange(2, 2, sheet.getLastRow() - 1, 1).getValues()
+      .flat()
+      .map(date => {
+        // แปลงค่าวันที่ให้เป็นรูปแบบ YYYY-MM-DD ที่แน่นอน
+        if (date instanceof Date) {
+          return Utilities.formatDate(date, Session.getScriptTimeZone(), "yyyy-MM-dd");
+        }
+        return String(date);
+      });
+    return dates;
+  } catch (e) {
+    console.error("Error in getHolidayDates:", e);
+    return [];
+  }
+}
+
+/**
+ * เพิ่มวันหยุดใหม่
+ */
+function addHoliday(holidayData) {
+  try {
+    const sheet = SpreadsheetApp.openById(SHEET_ID).getSheetByName(HOLIDAY_SHEET_NAME);
+    const newId = _generateNextId(sheet, 'HOL', 'HolidayID');
+    sheet.appendRow([newId, holidayData.date, holidayData.name]);
+    return { success: true, message: 'เพิ่มวันหยุดสำเร็จ!' };
+  } catch (e) {
+    console.error("Error in addHoliday:", e);
+    return { success: false, message: 'เกิดข้อผิดพลาด: ' + e.message };
+  }
+}
+
+/**
+ * ลบวันหยุด
+ */
+function deleteHoliday(holidayId) {
+  try {
+    const sheet = SpreadsheetApp.openById(SHEET_ID).getSheetByName(HOLIDAY_SHEET_NAME);
+    const data = sheet.getDataRange().getValues();
+    const idColIndex = 0; // HolidayID อยู่คอลัมน์แรก
+    const rowIndex = data.findIndex(row => row[idColIndex] === holidayId);
+    if (rowIndex !== -1) {
+      sheet.deleteRow(rowIndex + 1);
+      return { success: true, message: 'ลบวันหยุดสำเร็จ!' };
+    }
+    return { success: false, message: 'ไม่พบวันหยุดที่ต้องการลบ' };
+  } catch (e) {
+    console.error("Error in deleteHoliday:", e);
+    return { success: false, message: 'เกิดข้อผิดพลาด: ' + e.message };
+  }
+}
+
+// ========== END: Holiday Management Functions ==========
+/**
+ * [แก้ไขฟังก์ชันนี้] - สร้างไฟล์ Google Docs หรือ PDF จากคำตอบของ AI
+ * @param {object} exportData - ข้อมูลที่ส่งมาจากหน้าเว็บ { text, charts, type }
+ * @returns {object} ผลลัพธ์พร้อม URL ของไฟล์ หรือข้อมูล Base64 ของ PDF
+ */
+function exportAiResponse(exportData) {
+  // เพิ่ม Log เพื่อตรวจสอบข้อมูลที่ได้รับ
+  console.log(JSON.stringify(exportData, null, 2));
+
+  try {
+    // แก้ไข: ตรวจสอบข้อมูลให้ละเอียดขึ้น
+    if (!exportData || typeof exportData.text !== 'string' || typeof exportData.type !== 'string' || !Array.isArray(exportData.charts)) {
+      throw new Error("ข้อมูลที่ได้รับจากหน้าเว็บไม่สมบูรณ์หรือไม่ถูกต้อง");
+    }
+
+    const folder = DriveApp.getFolderById(DRAFT_MEMO_FOLDER_ID);
+    const docName = `รายงานสรุป AI (${new Date().toLocaleString('th-TH')})`;
+    const doc = DocumentApp.create(docName);
+    const body = doc.getBody();
+
+    const paragraphs = exportData.text.split('\n');
+    paragraphs.forEach(p => {
+      if (p.trim() !== '') {
+        const paragraphElement = body.appendParagraph('');
+        const parts = p.split(/\*\*(.*?)\*\*/g);
+        parts.forEach((part, index) => {
+           if (index % 2 === 1) {
+              paragraphElement.appendText(part).setBold(true);
+           } else {
+              paragraphElement.appendText(part).setBold(false);
+           }
+        });
+      }
+    });
+
+    body.appendParagraph('');
+
+    if (exportData.charts && exportData.charts.length > 0) {
+      body.appendParagraph('กราฟประกอบการวิเคราะห์:').setHeading(DocumentApp.ParagraphHeading.HEADING2);
+      exportData.charts.forEach(chartImage => {
+        if(typeof chartImage === 'string' && chartImage.startsWith('data:image/png;base64,')) {
+          const base64Data = chartImage.split(',')[1];
+          const blob = Utilities.newBlob(Utilities.base64Decode(base64Data), 'image/png');
+          body.appendImage(blob);
+          body.appendParagraph('');
+        }
+      });
+    }
+
+    doc.saveAndClose();
+    const docFile = DriveApp.getFileById(doc.getId());
+    
+    folder.addFile(docFile);
+    DriveApp.getRootFolder().removeFile(docFile);
+
+    if (exportData.type === 'doc') {
+      docFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+      return { success: true, url: docFile.getUrl() };
+    }
+
+    if (exportData.type === 'pdf') {
+      const pdfBlob = docFile.getAs('application/pdf');
+      const pdfBase64 = Utilities.base64Encode(pdfBlob.getBytes());
+      
+      docFile.setTrashed(true);
+
+      return { 
+        success: true, 
+        fileData: pdfBase64, 
+        fileName: `${docName}.pdf`
+      };
+    }
+
+    return { success: false, message: 'รูปแบบไฟล์ที่ร้องขอไม่ถูกต้อง' };
+
+  } catch (e) {
+    console.error(`Error in exportAiResponse: ${e.toString()}`, e.stack);
+    return { success: false, message: `เกิดข้อผิดพลาดในการสร้างเอกสาร: ${e.message}` };
+  }
+}
+/* [โค้ดอัปเดต]
+ * แก้ไขฟังก์ชัน validateUser ให้ส่ง lineUserId กลับไปด้วย
+ * ในกรณีที่หาผู้ใช้ไม่พบ
+ */
+function validateUser(userId, displayName, pictureUrl) {
+  const users = _getUsersFromSheet();
+  const user = users.find(u => u.LINE_USER_ID === userId); // 
+
+  if (user) {
+    // หากผู้ใช้พบเจอ จะเข้าสู่ระบบสำเร็จ
+    return {
+      success: true,
+      role: user.Access, // <--- ตรวจสอบว่าคอลัมน์สิทธิ์ชื่อ Access ถูกต้องหรือไม่
+      userId: user.UserID, // [cite: 415]
+      firstName: user.FirstName, // [cite: 415]
+      lastName: user.LastName, // [cite: 415]
+      position: user.Position || '' // [cite: 415]
+    };
+  } else {
+    // === [จุดที่แก้ไข] ===
+    // ไม่พบผู้ใช้: ส่ง lineUserId กลับไปด้วย
+    return { 
+      success: false, 
+      message: 'ไม่พบข้อมูลผู้ใช้',
+      lineUserId: userId // <-- เพิ่มบรรทัดนี้
+    };
+  }
+}
+
+const channelId = "2008351092";  // Channel ID
+const channelSecret = "3b299d506dd4936b47eca858809e0753";  // Channel Secret
+
+// ตัวอย่างการใช้ Channel Secret สำหรับการเรียก LINE API (เช่น สำหรับการส่งข้อความ)
+const headers = {
+  "Authorization": "Bearer " + getLineAccessToken(channelId, channelSecret)
+};
+
+function getLineAccessToken(channelId, channelSecret) {
+  // ฟังก์ชันนี้จะได้รับ access token จาก LINE API
+  // ทำการร้องขอเพื่อรับ token โดยใช้ Channel Secret และ Channel ID
+}
+/**
+ * ฟังก์ชันใหม่: ดึงข้อมูลการตั้งค่าระบบทั้งหมดในครั้งเดียว
+ * เพื่อลดจำนวน request จาก client ทำให้โหลดหน้าเว็บเร็วขึ้น
+ */
+function getSystemSettingsBundle() {
+  try {
+    const props = PropertiesService.getScriptProperties().getProperties();
+    const logoFileId = props['logoFileId'];
+    const bgProp = props['loginBackground'];
+    
+    let logoData = null;
+    if (logoFileId) {
+       const lData = getDataUrl(logoFileId);
+       if(lData) logoData = `data:${lData.type};base64,${lData.bytes}`;
+    }
+
+    let bgData = null;
+    if (bgProp) {
+       const bgSetting = JSON.parse(bgProp);
+       if (bgSetting.type === 'image') {
+          const bData = getDataUrl(bgSetting.value);
+          if(bData) {
+            bgData = { type: 'image', value: `data:${bData.type};base64,${bData.bytes}` };
+          }
+       } else {
+          bgData = bgSetting;
+       }
+    }
+    
+    return {
+      logo: logoData,
+      background: bgData
+    };
+  } catch (e) {
+    console.error("getSystemSettingsBundle Error:", e);
+    return null;
+  }
+}
+
+// ====================================================================
+// ==================== [UPDATED] ฟังก์ชันสำหรับ Admin สร้างคำขอแบบกลุ่ม ====================
+// ====================================================================
+
+function adminSubmitBulkOT(queueList) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000); 
+
+    if (!queueList || queueList.length === 0) throw new Error("ไม่มีรายการข้อมูล");
+
+    const sheet = SpreadsheetApp.openById(SHEET_ID).getSheetByName(OVERTIME_REQUEST_SHEET_NAME);
+    const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+    
+    // ดึงข้อมูล User ทั้งหมดมารอเทียบแผนก
+    const allUsers = _getUsersFromSheet();
+    const userMap = new Map(allUsers.map(u => [u.UserID, u]));
+
+    // คำนวณ ID... (ส่วนนี้เหมือนเดิม)
+    const prefix = 'OTR';
+    const idColIndex = headers.indexOf(COLUMNS.REQUEST.ID);
+    const lastRow = sheet.getLastRow();
+    let maxNumber = 0;
+    if (lastRow > 1) {
+      const allIds = sheet.getRange(2, idColIndex + 1, lastRow - 1, 1).getValues().flat();
+      maxNumber = allIds.reduce((max, id) => {
+        const num = parseInt(String(id).replace(prefix, ''), 10) || 0;
+        return num > max ? num : max;
+      }, 0);
+    }
+
+    const newRows = [];
+    let generatedCount = 0;
+    let duplicateCount = 0;
+
+    queueList.forEach((item) => {
+      // [ป้องกันซ้ำ]
+      if (typeof _isDuplicateRequest === 'function' && _isDuplicateRequest(sheet, item.userId, item.requestDate, item.reason)) {
+         duplicateCount++; return; 
+      }
+
+      // --- [จุดที่แก้ไข] เช็คแผนกเพื่อข้าม Supervisor ---
+      const userInfo = userMap.get(item.userId);
+      const department = userInfo ? userInfo.Department : '';
+      
+      let initialStatus = 'Pending Supervisor Approval';
+      let supervisorId = '';
+      let supervisorApproval = '';
+      let approvalDate = '';
+
+      // ถ้าเป็นแผนก "ผู้บริหาร" ให้ข้ามไปเลย
+      if (department === 'ผู้บริหาร') {
+          initialStatus = 'Approved by Supervisor';
+          supervisorId = 'Auto-Skipped';
+          supervisorApproval = 'Approved';
+          approvalDate = new Date();
+      }
+      // ---------------------------------------------
+
+      const nextNumber = maxNumber + 1 + generatedCount;
+      const nextId = `${prefix}${String(nextNumber).padStart(5, '0')}`;
+      
+      const newRowData = {
+        [COLUMNS.REQUEST.ID]: nextId,
+        [COLUMNS.REQUEST.USER_ID]: item.userId,
+        [COLUMNS.REQUEST.REQUEST_DATE]: item.requestDate,
+        'OverTimeStart': item.overTimeStart,
+        'OverTimeEnd': item.overTimeEnd,
+        'TotalHours': item.totalHours,
+        [COLUMNS.REQUEST.REASON]: item.reason, 
+        [COLUMNS.REQUEST.STATUS]: initialStatus,
+        // เพิ่มฟิลด์เหล่านี้เพื่อให้สถานะสมบูรณ์
+        [COLUMNS.REQUEST.SUPERVISOR_ID]: supervisorId,
+        [COLUMNS.REQUEST.SUPERVISOR_APPROVAL]: supervisorApproval,
+        [COLUMNS.REQUEST.APPROVAL_DATE]: approvalDate
+      };
+
+      const row = headers.map(header => newRowData[header] || '');
+      newRows.push(row);
+      generatedCount++;
+    });
+
+    if (newRows.length > 0) {
+      sheet.getRange(sheet.getLastRow() + 1, 1, newRows.length, headers.length).setValues(newRows);
+      SpreadsheetApp.flush();
+      formatOverTimeSheetAsText();
+    }
+
+    return { 
+      success: true, 
+      message: `บันทึกสำเร็จ ${generatedCount} รายการ` + (duplicateCount > 0 ? ` (ข้ามซ้ำ ${duplicateCount})` : '')
+    };
+
+  } catch (error) {
+    console.error('Error:', error);
+    return { success: false, message: `Error: ${error.message}` };
+  } finally {
+    lock.releaseLock();
+  }
+}
+/**
+ * Helper พิเศษสำหรับ Gen ID ต่อเนื่องใน Memory โดยไม่ต้องอ่าน Sheet ใหม่ทุกครั้ง
+ */
+function _generateNextIdForBulk(sheet, prefix, idColumnName, offset) {
+  // ดึง ID ล่าสุดจาก Sheet ครั้งแรก
+  // หมายเหตุ: โค้ดนี้ประยุกต์จาก _generateNextId เดิม แต่เพิ่ม offset
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  const idColIndex = headers.indexOf(idColumnName);
+  const lastRow = sheet.getLastRow();
+  
+  let maxNumber = 0;
+  if (lastRow > 1) {
+    const allIds = sheet.getRange(2, idColIndex + 1, lastRow - 1, 1).getValues().flat();
+    maxNumber = allIds.reduce((max, id) => {
+      const num = parseInt(String(id).replace(prefix, ''), 10) || 0;
+      return num > max ? num : max;
+    }, 0);
+  }
+  
+  const nextNumber = maxNumber + 1 + offset;
+  return `${prefix}${String(nextNumber).padStart(5, '0')}`;
+}
+/**
+ * ฟังก์ชันตรวจสอบว่ามีคำขอซ้ำหรือไม่ (คนเดิม + วันเดิม + ภารกิจเดิม)
+ * @return {boolean} true = ซ้ำ, false = ไม่ซ้ำ
+ */
+function _isDuplicateRequest(sheet, userId, requestDate, reason) {
+  const data = sheet.getDataRange().getValues();
+  const headers = data[0];
+  
+  const userIdIdx = headers.indexOf(COLUMNS.REQUEST.USER_ID);
+  const dateIdx = headers.indexOf(COLUMNS.REQUEST.REQUEST_DATE);
+  const reasonIdx = headers.indexOf(COLUMNS.REQUEST.REASON);
+  const statusIdx = headers.indexOf(COLUMNS.REQUEST.STATUS);
+
+  // แปลงวันที่เป้าหมายเป็น string YYYY-MM-DD เพื่อเทียบให้ตรงกัน
+  const targetDateObj = new Date(requestDate);
+  const targetDateStr = Utilities.formatDate(targetDateObj, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+
+  // วนลูปเช็คทุกแถว (เริ่มแถวที่ 2)
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    const status = String(row[statusIdx]);
+
+    // ถ้าสถานะเป็น "ยกเลิก" หรือ "ไม่เห็นชอบ/ไม่อนุมัติ" ถือว่าไม่ซ้ำ (ขอใหม่ได้)
+    if (status.includes('ยกเลิก') || status.includes('Rejected') || status.includes('ไม่เห็นชอบ') || status.includes('ไม่อนุมัติ')) {
+      continue;
+    }
+
+    const rowUser = String(row[userIdIdx]);
+    const rowReason = String(row[reasonIdx]);
+    
+    // แปลงวันที่ในแถวมาเทียบ
+    let rowDateStr = '';
+    if (row[dateIdx] instanceof Date) {
+        rowDateStr = Utilities.formatDate(row[dateIdx], Session.getScriptTimeZone(), 'yyyy-MM-dd');
+    } else {
+        // กรณีวันที่เป็น string
+        const d = new Date(row[dateIdx]);
+        if(!isNaN(d.getTime())) rowDateStr = Utilities.formatDate(d, Session.getScriptTimeZone(), 'yyyy-MM-dd');
+    }
+
+    // เงื่อนไข: คนเดียวกัน + วันเดียวกัน + ภารกิจเดียวกันเป๊ะๆ
+    if (rowUser === String(userId) && rowDateStr === targetDateStr && rowReason === String(reason)) {
+      return true; // เจอตัวซ้ำ!
+    }
+  }
+  
+  return false; // ไม่เจอซ้ำ
+}
+/**
+ * ดึงประวัติไฟล์ร่างบันทึกจากโฟลเดอร์
+ */
+function getMemoHistory() {
+  try {
+    const folder = DriveApp.getFolderById(DRAFT_MEMO_FOLDER_ID);
+    const files = folder.getFiles();
+    const fileList = [];
+
+    while (files.hasNext()) {
+      const file = files.next();
+      fileList.push({
+        id: file.getId(),
+        name: file.getName(),
+        url: file.getUrl(),
+        created: file.getDateCreated().getTime(), // เก็บ timestamp เพื่อเรียงลำดับ
+        dateStr: Utilities.formatDate(file.getDateCreated(), Session.getScriptTimeZone(), "dd/MM/yyyy HH:mm")
+      });
+    }
+
+    // เรียงลำดับจาก ใหม่ -> เก่า
+    fileList.sort((a, b) => b.created - a.created);
+    
+    return fileList;
+  } catch (e) {
+    console.error("Error getting memo history:", e);
+    return [];
+  }
+}
