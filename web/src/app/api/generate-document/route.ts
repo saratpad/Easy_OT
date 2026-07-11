@@ -94,74 +94,67 @@ export async function POST(request: Request) {
       }
     })
 
-    const formatGroup = (requests: any[], typeLabel: string) => {
-      if (requests.length === 0) return []
+    // --- Helper: สร้าง date string และ namePos string สำหรับแต่ละกลุ่ม ---
+    const SEP = '\n---------------------------------------------------------\n'
 
+    const buildDateStr = (requests: any[], typeLabel: string): string => {
+      if (requests.length === 0) return ''
       const dates = Array.from(new Set(requests.map(r => new Date(r.start_time).getDate()))).sort((a, b) => a - b)
       const sampleDate = new Date(requests[0].start_time)
       const monthYear = `${thMonthsShort[sampleDate.getMonth()]} ${sampleDate.getFullYear() + 543}`
-      const dateStr = `${dates.join(', ')} ${monthYear}`
+      return `${typeLabel}\n${dates.join(', ')} ${monthYear}`
+    }
 
-      const dayCol = `${typeLabel}\n${dateStr}`
-
-      // Group by user
-      const peopleMap = new Map()
+    const buildNamePos = (requests: any[]): string => {
+      const peopleMap = new Map<string, { name: string; position: string }>()
       requests.forEach(r => {
         if (!peopleMap.has(r.user_id)) {
-          peopleMap.set(r.user_id, {
-            name: r.user?.full_name,
-            position: r.user?.position,
-            tasks: new Set()
-          })
-        }
-        if (r.reason) {
-          peopleMap.get(r.user_id).tasks.add(r.reason.trim())
+          peopleMap.set(r.user_id, { name: r.user?.full_name, position: r.user?.position })
         }
       })
-
-      // Get all unique tasks across the whole group (case-insensitive dedup)
-      const seenTasks = new Map<string, string>() // normalized key -> original text
-      for (const p of peopleMap.values()) {
-        for (const t of p.tasks) {
-          const key = (t as string).toLowerCase().replace(/\s+/g, ' ')
-          if (!seenTasks.has(key)) {
-            seenTasks.set(key, t as string)
-          }
-        }
-      }
-      const uniqueTasks = Array.from(seenTasks.values())
-      const groupTaskCol = [
-        ...uniqueTasks.map(t => `- ${t}`),
-        '- ภารกิจอื่นที่ได้รับมอบหมาย'
-      ].join('\n')
-
-      const namesList = []
+      const list: string[] = []
       let idx = 1
       for (const p of peopleMap.values()) {
         const prefix = peopleMap.size > 1 ? `${idx}) ` : ''
-        namesList.push(`${prefix}${p.name}\n${p.position}`)
+        list.push(`${prefix}${p.name}\n${p.position}`)
         idx++
       }
-
-      const namePosCol = namesList.join('\n---------------------------------------------------------\n')
-
-      return [{
-        date: dayCol.trim(),
-        namePos: namePosCol,
-        task: groupTaskCol.trim()
-      }]
+      return list.join(SEP)
     }
 
-    const wdGroup = formatGroup(workdays, 'วันทำการ')
-    const hdGroup = formatGroup(holidaysReq, 'วันหยุดราชการ')
+    // --- รวบรวมภารกิจทั้งหมด (dedup) จากทุก request ---
+    const allSeenTasks = new Map<string, string>()
+    otRequests.forEach(r => {
+      if (r.reason) {
+        const t = r.reason.trim()
+        const key = t.toLowerCase().replace(/\s+/g, ' ')
+        if (!allSeenTasks.has(key)) allSeenTasks.set(key, t)
+      }
+    })
+    const combinedTaskCol = [
+      ...Array.from(allSeenTasks.values()).map(t => `- ${t}`),
+      '- ภารกิจอื่นที่ได้รับมอบหมาย'
+    ].join('\n')
 
-    const employees = []
-    if (wdGroup.length > 0) employees.push(...wdGroup)
-    // Add a separator row between workday and holiday sections if both exist
-    if (wdGroup.length > 0 && hdGroup.length > 0) {
-      employees.push({ date: '---', namePos: '', task: '', isSeparator: true })
+    // --- สร้าง dateCol และ namePosCol รวมทั้งสองกลุ่มในช่องเดียว ---
+    const dateParts: string[] = []
+    const nameParts: string[] = []
+
+    if (workdays.length > 0) {
+      dateParts.push(buildDateStr(workdays, 'วันทำการ'))
+      nameParts.push(buildNamePos(workdays))
     }
-    if (hdGroup.length > 0) employees.push(...hdGroup)
+    if (holidaysReq.length > 0) {
+      dateParts.push(buildDateStr(holidaysReq, 'วันหยุดราชการ'))
+      nameParts.push(buildNamePos(holidaysReq))
+    }
+
+    // ตารางมีแค่ 1 แถว — วัน/เดือน/ปี และ รายชื่อ คั่นด้วย ---- ระหว่างกลุ่ม
+    const employees: any[] = [{
+      date: dateParts.join(SEP).trim(),
+      namePos: nameParts.join(SEP).trim(),
+      task: combinedTaskCol.trim()
+    }]
 
     // 4. Fetch Commander (Director) and Executive
     // - Commander is the Director of the division
