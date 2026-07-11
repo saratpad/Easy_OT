@@ -32,6 +32,7 @@ type OTDocument = {
   document_url: string | null
   line_sent: boolean
   created_at: string
+  updated_at: string
   created_by_user?: { full_name: string } | null
 }
 
