@@ -1,7 +1,7 @@
 'use client'
 
 import { OverviewData } from '@/app/actions/overview'
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, BarChart, Bar } from 'recharts'
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Legend } from 'recharts'
 import { BarChart3, Bot, CheckCircle, Clock, FileText, Sparkles, Users, User, ShieldAlert, Zap } from 'lucide-react'
 import { useState } from 'react'
 import { format } from 'date-fns'
@@ -62,7 +62,7 @@ export default function OverviewClient({
   }
 
   const handleAskAI = async () => {
-    const dataStr = overviewData.chartData.map(d => `${d.month}: ${d.hours} ชม.`).join(', ')
+    const dataStr = overviewData.chartData.map(d => `${d.month}: ขอ ${d.requestedHours} ชม. / ทำจริง ${d.actualHours} ชม.`).join(', ')
     const topUsersStr = deepInsights.topUsers.map(u => `- ${u.name}: ${u.hours} ชม.`).join('\n')
     const topGroupsStr = deepInsights.topGroups.map(g => `- ${g.name}: ${g.hours} ชม.`).join('\n')
     const topReasonsStr = deepInsights.topReasons.map(r => `- ${r.reason} (${r.count} ครั้ง)`).join('\n')
@@ -215,9 +215,13 @@ ${timeDistStr}
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={formattedChartData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
                 <defs>
-                  <linearGradient id="colorHours" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.8}/>
+                  <linearGradient id="colorRequested" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.4}/>
                     <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
+                  </linearGradient>
+                  <linearGradient id="colorActual" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#f97316" stopOpacity={0.4}/>
+                    <stop offset="95%" stopColor="#f97316" stopOpacity={0}/>
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f3f4f6" />
@@ -225,17 +229,29 @@ ${timeDistStr}
                 <YAxis axisLine={false} tickLine={false} tick={{fill: '#6b7280', fontSize: 12, fontWeight: 500}} dx={-10} />
                 <RechartsTooltip 
                   contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)', fontWeight: 'bold' }}
-                  formatter={(value: any) => [`${value || 0} ชั่วโมง`, 'รวมอนุมัติ']}
+                  formatter={(value: any, name: any) => [`${value || 0} ชั่วโมง`, name]}
                   cursor={{ stroke: '#9ca3af', strokeWidth: 1, strokeDasharray: '4 4' }}
+                />
+                <Legend verticalAlign="top" height={36} iconType="circle" />
+                <Area 
+                  type="monotone" 
+                  name="ชั่วโมงที่ขอ OT"
+                  dataKey="requestedHours" 
+                  stroke="#2563eb" 
+                  strokeWidth={3}
+                  fillOpacity={1} 
+                  fill="url(#colorRequested)" 
+                  activeDot={{ r: 6, strokeWidth: 0, fill: '#2563eb' }}
                 />
                 <Area 
                   type="monotone" 
-                  dataKey="hours" 
-                  stroke="#2563eb" 
-                  strokeWidth={4}
+                  name="ชั่วโมงที่ปฏิบัติงานจริง"
+                  dataKey="actualHours" 
+                  stroke="#ea580c" 
+                  strokeWidth={3}
                   fillOpacity={1} 
-                  fill="url(#colorHours)" 
-                  activeDot={{ r: 8, strokeWidth: 0, fill: '#1d4ed8' }}
+                  fill="url(#colorActual)" 
+                  activeDot={{ r: 6, strokeWidth: 0, fill: '#ea580c' }}
                 />
               </AreaChart>
             </ResponsiveContainer>

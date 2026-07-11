@@ -7,7 +7,7 @@ export type OverviewData = {
   totalRequests: number
   pendingRequests: number
   totalApprovedHours: number
-  chartData: { month: string, hours: number }[]
+  chartData: { month: string, requestedHours: number, actualHours: number }[]
   statusData: { name: string, value: number, color: string }[]
   deepInsights: {
     topUsers: { name: string, hours: number }[]
@@ -63,27 +63,30 @@ export async function fetchOverviewData(effectiveDivisionId?: string, effectiveG
   const approvedRequests = requests.filter(r => r.status === 'approved')
   const totalApprovedHours = approvedRequests.reduce((acc, curr) => acc + (curr.actual_total_hours ?? curr.total_hours), 0)
   
-  const chartDataMap: Record<string, number> = {}
+  const chartDataMap: Record<string, { requestedHours: number, actualHours: number }> = {}
   
   const today = new Date()
   for (let i = 5; i >= 0; i--) {
     const d = new Date(today.getFullYear(), today.getMonth() - i, 1)
     const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-    chartDataMap[monthKey] = 0
+    chartDataMap[monthKey] = { requestedHours: 0, actualHours: 0 }
   }
 
   approvedRequests.forEach(r => {
-    const hours = r.actual_total_hours ?? r.total_hours
+    const requested = r.total_hours || 0
+    const actual = r.actual_total_hours !== null && r.actual_total_hours !== undefined ? r.actual_total_hours : 0
     const d = new Date(r.start_time)
     const monthKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
     if (chartDataMap[monthKey] !== undefined) {
-      chartDataMap[monthKey] += hours
+      chartDataMap[monthKey].requestedHours += requested
+      chartDataMap[monthKey].actualHours += actual
     }
   })
 
-  const chartData = Object.entries(chartDataMap).map(([month, hours]) => ({
+  const chartData = Object.entries(chartDataMap).map(([month, data]) => ({
     month,
-    hours
+    requestedHours: data.requestedHours,
+    actualHours: data.actualHours
   }))
 
   const rejectedRequests = requests.filter(r => r.status === 'rejected').length
