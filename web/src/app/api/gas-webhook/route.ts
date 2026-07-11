@@ -70,8 +70,8 @@ export async function POST(request: Request) {
       } else {
         // Default to memo
         message = `📝 ออกบันทึกข้อความขออนุมัติปฏิบัติงาน OT สำเร็จ!\n`
-          + `ประจำเดือน: ${otDocument.month_year}\n`
-          + (otDocument.doc_number ? `เลขที่: ${otDocument.doc_number}\n` : '')
+          + (otDocument.doc_number ? `เลขที่: ${otDocument.doc_number} ` : '')
+          + `วันที่สร้างเอกสาร ${otDocument.month_year}\n`
           + `\nกรุณาดาวน์โหลดหรือตรวจสอบเอกสารที่ลิงก์ด้านล่าง:\n${finalUrl}`
       }
 

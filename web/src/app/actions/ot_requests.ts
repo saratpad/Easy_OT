@@ -194,7 +194,9 @@ async function sendLineNotification(request: any, supabase: any) {
       year: 'numeric', month: 'long', day: 'numeric'
     })
 
-    const message = `✅ อนุมัติ OT สำเร็จ!\n👤 ผู้ขอ: ${fullRequest.user?.full_name}\n📅 วันที่: ${startDate}\n⏱ จำนวน: ${fullRequest.total_hours} ชม.\n📋 เหตุผล: ${fullRequest.reason}`
+    const message = `🔔 คำร้องขออนุมัติ OT ของคุณ ${fullRequest.user?.full_name}\n`
+      + `ได้รับการพิจารณาอนุมัติจากผู้บริหารครบถ้วนทุกขั้นตอนแล้ว!\n\n`
+      + `👉 ขอความกรุณาผู้ดูแลภายในกอง ตรวจสอบและดำเนินการออกบันทึกข้อความต่อไป`
 
     await fetch('https://api.line.me/v2/bot/message/push', {
       method: 'POST',
