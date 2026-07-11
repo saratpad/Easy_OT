@@ -204,6 +204,7 @@ export default function DocumentClient({ divisionId, approvedRequests, documents
       }
 
       showToast('เริ่มกระบวนการพิมพ์ซ้ำแล้ว รอสักครู่ (ระบบจะส่งไปทาง LINE ด้วย)', 'success')
+      router.refresh()
       
     } catch (err) {
       console.error(err)
