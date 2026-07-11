@@ -94,9 +94,7 @@ export async function POST(request: Request) {
       }
     })
 
-    // --- Helper: สร้าง date string และ namePos string สำหรับแต่ละกลุ่ม ---
-    const SEP = '\n---------------------------------------------------------\n'
-
+    // --- Helper: สร้าง date string สำหรับแต่ละกลุ่ม ---
     const buildDateStr = (requests: any[], typeLabel: string): string => {
       if (requests.length === 0) return ''
       const dates = Array.from(new Set(requests.map(r => new Date(r.start_time).getDate()))).sort((a, b) => a - b)
@@ -105,22 +103,23 @@ export async function POST(request: Request) {
       return `${typeLabel}\n${dates.join(', ')} ${monthYear}`
     }
 
-    const buildNamePos = (requests: any[]): string => {
-      const peopleMap = new Map<string, { name: string; position: string }>()
-      requests.forEach(r => {
-        if (!peopleMap.has(r.user_id)) {
-          peopleMap.set(r.user_id, { name: r.user?.full_name, position: r.user?.position })
-        }
-      })
-      const list: string[] = []
-      let idx = 1
-      for (const p of peopleMap.values()) {
-        const prefix = peopleMap.size > 1 ? `${idx}) ` : ''
-        list.push(`${prefix}${p.name}\n${p.position}`)
-        idx++
+    // --- รวบรวมรายชื่อผู้ปฏิบัติงานทั้งหมดจากทุก Requests (รวมทั้งวันทำการและวันหยุด ไม่ซ้ำคน) ---
+    const SEP = '\n---------------------------------------------------------\n'
+    const uniquePeopleMap = new Map<string, { name: string; position: string }>()
+    otRequests.forEach(r => {
+      if (r.user && !uniquePeopleMap.has(r.user_id)) {
+        uniquePeopleMap.set(r.user_id, { name: r.user.full_name, position: r.user.position })
       }
-      return list.join(SEP)
+    })
+
+    const namesList: string[] = []
+    let idx = 1
+    for (const p of uniquePeopleMap.values()) {
+      const prefix = uniquePeopleMap.size > 1 ? `${idx}) ` : ''
+      namesList.push(`${prefix}${p.name}\n${p.position}`)
+      idx++
     }
+    const namePosCol = namesList.join(SEP)
 
     // --- รวบรวมภารกิจทั้งหมด (dedup) จากทุก request ---
     const allSeenTasks = new Map<string, string>()
@@ -136,23 +135,19 @@ export async function POST(request: Request) {
       '- ภารกิจอื่นที่ได้รับมอบหมาย'
     ].join('\n')
 
-    // --- สร้าง dateCol และ namePosCol รวมทั้งสองกลุ่มในช่องเดียว ---
+    // --- สร้าง dateCol โดยคั่นด้วยเว้นบรรทัดสองครั้ง (\n\n) แทนเส้นประ ---
     const dateParts: string[] = []
-    const nameParts: string[] = []
-
     if (workdays.length > 0) {
       dateParts.push(buildDateStr(workdays, 'วันทำการ'))
-      nameParts.push(buildNamePos(workdays))
     }
     if (holidaysReq.length > 0) {
       dateParts.push(buildDateStr(holidaysReq, 'วันหยุดราชการ'))
-      nameParts.push(buildNamePos(holidaysReq))
     }
 
-    // ตารางมีแค่ 1 แถว — วัน/เดือน/ปี และ รายชื่อ คั่นด้วย ---- ระหว่างกลุ่ม
+    // ตารางมีแค่ 1 แถว
     const employees: any[] = [{
-      date: dateParts.join(SEP).trim(),
-      namePos: nameParts.join(SEP).trim(),
+      date: dateParts.join('\n\n').trim(),
+      namePos: namePosCol.trim(),
       task: combinedTaskCol.trim()
     }]
 
