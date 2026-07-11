@@ -140,12 +140,13 @@ export async function updateOTRequestStatus(
       .eq('id', requestId)
   } else if (status === 'approved') {
     // ตรวจสอบว่ามี step ถัดไปหรือไม่
-    const { data: nextStep } = await supabase
+    const { data: nextStep, error: nextStepError } = await supabase
       .from('approval_routes')
       .select('*')
       .eq('division_id', request.division_id)
       .eq('step_order', request.current_step + 1)
-      .single()
+      .eq('is_deleted', false)
+      .maybeSingle()
 
     if (nextStep) {
       // เลื่อนไป step ถัดไป
