@@ -68,10 +68,23 @@ export async function POST(request: Request) {
           + `ประจำเดือน: ${otDocument.month_year}\n`
           + `\nกรุณาดาวน์โหลดหรือตรวจสอบเอกสารที่ลิงก์ด้านล่าง:\n${finalUrl}`
       } else {
+        // ฟังก์ชันช่วยจัดรูปแบบวันที่สร้างเอกสาร
+        const thMonths = [
+          'มกราคม', 'กุมภาพันธ์', 'มีนาคม', 'เมษายน', 'พฤษภาคม', 'มิถุนายน',
+          'กรกฎาคม', 'สิงหาคม', 'กันยายน', 'ตุลาคม', 'พฤศจิกายน', 'ธันวาคม'
+        ]
+        const toThaiDigits = (text: string) => {
+          const thaiDigits = ['๐', '๑', '๒', '๓', '๔', '๕', '๖', '๗', '๘', '๙']
+          return text.replace(/[0-9]/g, match => thaiDigits[parseInt(match, 10)])
+        }
+
+        const dateObj = new Date(otDocument.created_at)
+        const thaiDateStr = `${dateObj.getDate()} ${thMonths[dateObj.getMonth()]} ${dateObj.getFullYear() + 543}`
+
         // Default to memo
         message = `📝 ออกบันทึกข้อความขออนุมัติปฏิบัติงาน OT สำเร็จ!\n`
-          + (otDocument.doc_number ? `เลขที่: ${otDocument.doc_number} ` : '')
-          + `วันที่สร้างเอกสาร ${otDocument.month_year}\n`
+          + (otDocument.doc_number ? `เลขที่: ${toThaiDigits(otDocument.doc_number)} ` : '')
+          + `วันที่สร้างเอกสาร ${toThaiDigits(thaiDateStr)}\n`
           + `\nกรุณาดาวน์โหลดหรือตรวจสอบเอกสารที่ลิงก์ด้านล่าง:\n${finalUrl}`
       }
 
