@@ -141,7 +141,7 @@ export async function POST(request: Request) {
       '- ภารกิจอื่นที่ได้รับมอบหมาย'
     ].join('\n')
 
-    // --- สร้าง dateCol โดยคั่นด้วยเว้นบรรทัดสองครั้ง (\n\n) แทนเส้นประ ---
+    // --- สร้าง dateCol โดยคั่นด้วยเว้นบรรทัดหนึ่งครั้ง (\n) เพื่อให้ชิดขึ้น ---
     const dateParts: string[] = []
     if (workdays.length > 0) {
       dateParts.push(buildDateStr(workdays, 'วันทำการ'))
@@ -150,9 +150,9 @@ export async function POST(request: Request) {
       dateParts.push(buildDateStr(holidaysReq, 'วันหยุดราชการ'))
     }
 
-    // ตารางมีแค่ 1 แถว
+    // ตารางมีแค่ 1 แถ
     const employees: any[] = [{
-      date: dateParts.join('\n\n').trim(),
+      date: dateParts.join('\n').trim(),
       namePos: namePosCol.trim(),
       task: combinedTaskCol.trim()
     }]
