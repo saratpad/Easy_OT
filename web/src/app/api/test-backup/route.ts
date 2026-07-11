@@ -11,7 +11,11 @@ export async function GET() {
   const { data: files } = await supabase.storage.from('backups').list()
   if (!files || files.length === 0) return NextResponse.json({ error: 'no files' })
   
-  files.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+  files.sort((a, b) => {
+    const dateA = a.created_at ? new Date(a.created_at).getTime() : 0
+    const dateB = b.created_at ? new Date(b.created_at).getTime() : 0
+    return dateB - dateA
+  })
   const latest = files.find(f => f.name.endsWith('.xlsx'))
   if (!latest) return NextResponse.json({ error: 'no xlsx' })
   
