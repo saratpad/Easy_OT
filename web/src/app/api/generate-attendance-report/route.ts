@@ -148,7 +148,7 @@ export async function POST(request: Request) {
       employees: employees,
       remarks: remarks,
       documentId: documentId,
-      callbackUrl: `${request.headers.get('origin')}/api/gas-webhook`
+      callbackUrl: `${(process.env.NEXT_PUBLIC_BASE_URL || request.headers.get('origin') || 'http://localhost:3000').trim()}/api/gas-webhook`
     }
 
     // 6. Send to GAS

@@ -215,7 +215,7 @@ export async function POST(request: Request) {
       executiveSignatureUrl: executive?.signature_url || '',
       executiveApprovedDate,
 
-      callbackUrl: `${request.headers.get('origin')}/api/gas-webhook`
+      callbackUrl: `${(process.env.NEXT_PUBLIC_BASE_URL || request.headers.get('origin') || 'http://localhost:3000').trim()}/api/gas-webhook`
     }
 
     // 5. POST to GAS Webhook
