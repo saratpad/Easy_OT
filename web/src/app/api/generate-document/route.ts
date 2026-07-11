@@ -103,6 +103,12 @@ export async function POST(request: Request) {
       return `${typeLabel}\n${dates.join(', ')} ${monthYear}`
     }
 
+    // --- ฟังก์ชันแปลงตัวเลขอารบิกเป็นตัวเลขไทย ---
+    const toThaiNum = (num: number): string => {
+      const thaiDigits = ['๐', '๑', '๒', '๓', '๔', '๕', '๖', '๗', '๘', '๙']
+      return num.toString().split('').map(d => thaiDigits[parseInt(d, 10)]).join('')
+    }
+
     // --- รวบรวมรายชื่อผู้ปฏิบัติงานทั้งหมดจากทุก Requests (รวมทั้งวันทำการและวันหยุด ไม่ซ้ำคน) ---
     const SEP = '\n---------------------------------------------------------\n'
     const uniquePeopleMap = new Map<string, { name: string; position: string }>()
@@ -115,7 +121,7 @@ export async function POST(request: Request) {
     const namesList: string[] = []
     let idx = 1
     for (const p of uniquePeopleMap.values()) {
-      const prefix = uniquePeopleMap.size > 1 ? `${idx}) ` : ''
+      const prefix = uniquePeopleMap.size > 1 ? `${toThaiNum(idx)}) ` : ''
       namesList.push(`${prefix}${p.name}\n${p.position}`)
       idx++
     }
