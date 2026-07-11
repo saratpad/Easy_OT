@@ -1,8 +1,14 @@
 'use server'
 
 import { createClient } from '@/utils/supabase/server'
+import { createClient as createSupabaseAdmin } from '@supabase/supabase-js'
 import { revalidatePath } from 'next/cache'
 import { getSessionUser } from '@/app/actions/auth'
+
+const supabaseAdmin = createSupabaseAdmin(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+)
 
 export async function createOTRequest(formData: FormData) {
   const supabase = await createClient()
@@ -174,7 +180,7 @@ export async function updateOTRequestStatus(
 // ─── Helper: LINE Notification ─────────────────────────────────────────────
 async function sendLineNotification(request: any, supabase: any) {
   try {
-    const { data: divData } = await supabase
+    const { data: divData } = await supabaseAdmin
       .from('divisions')
       .select('line_channel_access_token, line_target_id, line_notifications_enabled')
       .eq('id', request.division_id)
@@ -183,7 +189,7 @@ async function sendLineNotification(request: any, supabase: any) {
     if (!divData?.line_channel_access_token || !divData?.line_target_id) return
     if (divData.line_notifications_enabled === false) return
 
-    const { data: fullRequest } = await supabase
+    const { data: fullRequest } = await supabaseAdmin
       .from('ot_requests')
       .select('*, user:users(full_name, position)')
       .eq('id', request.id)
