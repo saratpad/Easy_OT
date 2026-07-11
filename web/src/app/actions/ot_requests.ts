@@ -175,11 +175,12 @@ async function sendLineNotification(request: any, supabase: any) {
   try {
     const { data: divData } = await supabase
       .from('divisions')
-      .select('line_channel_access_token, line_target_id')
+      .select('line_channel_access_token, line_target_id, line_notifications_enabled')
       .eq('id', request.division_id)
       .single()
 
     if (!divData?.line_channel_access_token || !divData?.line_target_id) return
+    if (divData.line_notifications_enabled === false) return
 
     const { data: fullRequest } = await supabase
       .from('ot_requests')
