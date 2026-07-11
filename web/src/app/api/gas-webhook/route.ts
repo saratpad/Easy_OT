@@ -13,9 +13,10 @@ export async function POST(request: Request) {
     const supabase = createClient(supabaseUrl, supabaseServiceKey)
 
     const body = await request.json()
-    const { documentId, documentUrl, driveFolderId, success } = body
+    const { documentId, documentUrl, url, driveFolderId, success } = body
+    const finalUrl = documentUrl || url
 
-    if (!documentId || !documentUrl || !success) {
+    if (!documentId || !finalUrl || !success) {
       return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
     }
 
@@ -35,7 +36,7 @@ export async function POST(request: Request) {
     await supabase
       .from('ot_documents')
       .update({ 
-        document_url: documentUrl,
+        document_url: finalUrl,
         updated_at: new Date().toISOString()
       })
       .eq('id', documentId)
@@ -44,7 +45,7 @@ export async function POST(request: Request) {
     if (otDocument.request_ids && otDocument.request_ids.length > 0) {
       await supabase
         .from('ot_requests')
-        .update({ pdf_url: documentUrl })
+        .update({ pdf_url: finalUrl })
         .in('id', otDocument.request_ids)
     }
 
@@ -65,13 +66,13 @@ export async function POST(request: Request) {
       if (otDocument.doc_type === 'attendance') {
         message = `📅 ออกตาราง/รายงานบัญชีลงเวลาปฏิบัติงาน OT สำเร็จ!\n`
           + `ประจำเดือน: ${otDocument.month_year}\n`
-          + `\nกรุณาดาวน์โหลดหรือตรวจสอบเอกสารที่ลิงก์ด้านล่าง:\n${documentUrl}`
+          + `\nกรุณาดาวน์โหลดหรือตรวจสอบเอกสารที่ลิงก์ด้านล่าง:\n${finalUrl}`
       } else {
         // Default to memo
         message = `📝 ออกบันทึกข้อความขออนุมัติปฏิบัติงาน OT สำเร็จ!\n`
           + `ประจำเดือน: ${otDocument.month_year}\n`
           + (otDocument.doc_number ? `เลขที่: ${otDocument.doc_number}\n` : '')
-          + `\nกรุณาดาวน์โหลดหรือตรวจสอบเอกสารที่ลิงก์ด้านล่าง:\n${documentUrl}`
+          + `\nกรุณาดาวน์โหลดหรือตรวจสอบเอกสารที่ลิงก์ด้านล่าง:\n${finalUrl}`
       }
 
       try {
