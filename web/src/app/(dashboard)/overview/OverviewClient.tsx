@@ -1,7 +1,7 @@
 'use client'
 
 import { OverviewData } from '@/app/actions/overview'
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Legend } from 'recharts'
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip as RechartsTooltip, ResponsiveContainer, Legend, BarChart, Bar } from 'recharts'
 import { BarChart3, Bot, CheckCircle, Clock, FileText, Sparkles, Users, User, ShieldAlert, Zap } from 'lucide-react'
 import { useState } from 'react'
 import { format } from 'date-fns'
