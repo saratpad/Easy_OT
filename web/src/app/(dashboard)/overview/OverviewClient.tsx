@@ -98,9 +98,16 @@ ${timeDistStr}
     try {
       await navigator.clipboard.writeText(prompt)
       setCopied(true)
-      alert('✅ ระบบได้ทำการวิเคราะห์ข้อมูลเชิงลึก และคัดลอกข้อมูลสรุป (Prompt) ไว้ให้คุณแล้ว\n\nเมื่อหน้าต่าง Gemini เปิดขึ้นมา กรุณากด "วาง" (Paste / Ctrl+V) ในช่องข้อความเพื่อส่งข้อมูลให้ AI ได้เลยครับ')
+      
+      const isLine = typeof navigator !== 'undefined' && /Line/i.test(navigator.userAgent)
+      if (isLine) {
+        alert('✅ ระบบได้ทำการวิเคราะห์ข้อมูลเชิงลึก และคัดลอกข้อมูลสรุป (Prompt) เรียบร้อยแล้ว\n\nระบบจะเปิด Gemini ในเบราว์เซอร์หลักของเครื่อง เพื่อให้คุณสามารถกด "วาง" (Paste) ข้อมูลได้สะดวกครับ')
+        window.open('https://gemini.google.com/?openExternalBrowser=1', '_blank')
+      } else {
+        alert('✅ ระบบได้ทำการวิเคราะห์ข้อมูลเชิงลึก และคัดลอกข้อมูลสรุป (Prompt) ไว้ให้คุณแล้ว\n\nเมื่อหน้าต่าง Gemini เปิดขึ้นมา กรุณากด "วาง" (Paste / Ctrl+V) ในช่องข้อความเพื่อส่งข้อมูลให้ AI ได้เลยครับ')
+        window.open('https://gemini.google.com/', '_blank')
+      }
       setTimeout(() => setCopied(false), 4000)
-      window.open('https://gemini.google.com/', '_blank')
     } catch (err) {
       console.error('Failed to copy', err)
       alert('ไม่สามารถคัดลอกข้อความได้ กรุณาลองอีกครั้ง หรือใช้เบราว์เซอร์อื่น')
