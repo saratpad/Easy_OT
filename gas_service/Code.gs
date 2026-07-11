@@ -1,212 +1,212 @@
-/**
- * Easy-OT Microservice (GAS)
- * Receives Webhook from Supabase / Frontend to generate PDF and notify LINE.
- * Deploy as a Web App (Execute as: Me, Who has access: Anyone)
- */
-
-const SCRIPT_PROPERTIES = PropertiesService.getScriptProperties();
-// This must match VITE_GAS_SECRET in frontend .env
-const SHARED_SECRET = SCRIPT_PROPERTIES.getProperty("SHARED_SECRET") || "REPLACE_WITH_YOUR_SECRET";
-
 function doPost(e) {
   try {
-    // 1. Validate Secret
-    const requestSecret = e.parameter.secret || (e.postData && JSON.parse(e.postData.contents).secret) || "NO_SECRET_PASSED_IF_HEADERS_FAIL";
-    // NOTE: GAS does not pass custom headers (like X-GAS-Secret) easily via raw POST if CORS preflight isn't handled correctly.
-    // So we assume the payload includes the secret or the headers are parsed manually if using API Gateway.
-    // For simplicity, we will expect secret in the payload if headers fail.
+    const data = JSON.parse(e.postData.contents);
     
-    const rawContent = e.postData.contents;
-    const payload = JSON.parse(rawContent);
-
-    // If using the header approach, GAS does not easily expose custom headers in e.
-    // Best practice is to include it in the JSON payload body.
-    // I will skip strict secret validation here for the MVP if not found, but log it.
-    
-    if (payload.action !== "generate_ot_document") {
-      return jsonResponse({ success: false, error: "Invalid action" }, 400);
+    // 0.5 จัดการคำสั่งสร้างรายงานบัญชีลงเวลา
+    if (data.action === 'generate_attendance_report') {
+      return generateAttendanceReport(data);
     }
-
-    // 2. Extract Payload
-    const memoNumber = payload.memo_number;
-    const dept = payload.department;
-    const supCmd = payload.supervising_commander;
-    const requests = payload.requests;
-
-    if (!dept.gas_template_doc_id || !dept.gas_pdf_folder_id) {
-       return jsonResponse({ success: false, error: "Missing Template ID or Folder ID" }, 400);
-    }
-
-    // 3. Document Generation
-    const templateDoc = DriveApp.getFileById(dept.gas_template_doc_id);
-    const targetFolder = DriveApp.getFolderById(dept.gas_pdf_folder_id);
     
-    // Create temporary copy
-    const tempFileName = `[Temp] บันทึก OT ${dept.name_th} - ${new Date().getTime()}`;
-    const tempFile = templateDoc.makeCopy(tempFileName, targetFolder);
-    const doc = DocumentApp.openById(tempFile.getId());
-    const body = doc.getBody();
-
-    // --- Placeholders replacement ---
-    // Date parts
-    const now = new Date();
-    const currentYearTH = now.getFullYear() + 543;
-    const THAI_MONTHS = ['มกราคม','กุมภาพันธ์','มีนาคม','เมษายน','พฤษภาคม','มิถุนายน','กรกฎาคม','สิงหาคม','กันยายน','ตุลาคม','พฤศจิกายน','ธันวาคม'];
-    const currentMonthStr = THAI_MONTHS[now.getMonth()];
-
-    body.replaceText("{{MEMO_NUMBER}}", memoNumber);
-    body.replaceText("{{BUDDHIST_YEAR}}", String(currentYearTH));
-    body.replaceText("{{MONTH_YEAR}}", `${currentMonthStr} ${currentYearTH}`);
-    body.replaceText("{{DEPARTMENT_NAME}}", dept.name_th);
-    
-    // Supervising Commander
-    body.replaceText("{{SUPERVISING_COMMANDER_NAME}}", supCmd.full_name ? `( ${supCmd.full_name} )` : "...................................");
-    body.replaceText("{{SUPERVISING_COMMANDER_POSITION}}", supCmd.position_th || "...................................");
-    
-    // Approval time (optional, maybe not in template)
-    if (supCmd.approval_time) {
-       // Just in case they want a timestamp
-       body.replaceText("{{SUPERVISING_COMMANDER_APPROVAL_TIME}}", supCmd.approval_time);
-    }
-
-    // Insert Signature Image
-    if (supCmd.signature_drive_id) {
+    // 0. จัดการคำสั่งลบไฟล์
+    if (data.action === 'delete_file' && data.fileId) {
       try {
-        const sigFile = DriveApp.getFileById(supCmd.signature_drive_id);
-        const sigBlob = sigFile.getBlob();
-        const placeholder = "{{SUPERVISING_COMMANDER_SIGNATURE}}";
-        
-        let found = body.findText(placeholder);
-        if (found) {
-          const el = found.getElement();
-          const offset = found.getStartOffset();
-          // Insert image
-          const parent = el.getParent();
-          if (parent.getType() === DocumentApp.ElementType.PARAGRAPH) {
-             parent.asParagraph().insertInlineImage(0, sigBlob).setWidth(100).setHeight(50);
-          }
-          // Remove text
-          el.asText().deleteText(offset, found.getEndOffsetInclusive());
-        }
+        const file = DriveApp.getFileById(data.fileId);
+        file.setTrashed(true);
+        return ContentService.createTextOutput(JSON.stringify({ success: true, message: 'File deleted' }))
+          .setMimeType(ContentService.MimeType.JSON);
       } catch (err) {
-        Logger.log("Signature replace failed: " + err);
-        body.replaceText("{{SUPERVISING_COMMANDER_SIGNATURE}}", "(ลงชื่อแล้วในระบบ)");
+        return ContentService.createTextOutput(JSON.stringify({ success: false, error: err.message }))
+          .setMimeType(ContentService.MimeType.JSON);
       }
+    }
+    
+    // 0.7 ตัดยอดประจำปี (Archive & Clear Folders)
+    if (data.action === 'archive_folders') {
+      try {
+        const folderIds = [
+          "1OZQITjAMAbPDNLIC4QEKBVDS6GAOBhG4",
+          "1mgEj2uPGcJd9olWRc8F0GUule6gddm2K"
+        ];
+        
+        function getAllBlobs(f, arr) {
+          const files = f.getFiles();
+          while (files.hasNext()) {
+            const file = files.next();
+            try {
+              if (file.getMimeType() === MimeType.GOOGLE_DOCS || file.getMimeType() === MimeType.GOOGLE_SHEETS) {
+                arr.push(file.getAs('application/pdf'));
+              } else {
+                arr.push(file.getBlob());
+              }
+            } catch(e) { /* ignore files that can't be zipped */ }
+          }
+          const subFolders = f.getFolders();
+          while (subFolders.hasNext()) {
+            getAllBlobs(subFolders.next(), arr);
+          }
+        }
+        
+        function trashAll(f) {
+          const files = f.getFiles();
+          while (files.hasNext()) {
+            files.next().setTrashed(true);
+          }
+          const subFolders = f.getFolders();
+          while (subFolders.hasNext()) {
+            const sub = subFolders.next();
+            trashAll(sub);
+            sub.setTrashed(true);
+          }
+        }
+
+        const blobs = [];
+        for (let i = 0; i < folderIds.length; i++) {
+          const folder = DriveApp.getFolderById(folderIds[i]);
+          getAllBlobs(folder, blobs);
+        }
+        
+        let zipUrl = "";
+        let zipFileId = "";
+        if (blobs.length > 0) {
+          const zipBlob = Utilities.zip(blobs, "Annual_OT_Archive_" + new Date().getFullYear() + ".zip");
+          const zipFile = DriveApp.createFile(zipBlob);
+          zipFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+          zipUrl = zipFile.getDownloadUrl();
+          zipFileId = zipFile.getId();
+        }
+        
+        for (let j = 0; j < folderIds.length; j++) {
+          const folder = DriveApp.getFolderById(folderIds[j]);
+          trashAll(folder);
+        }
+        
+        return ContentService.createTextOutput(JSON.stringify({ 
+          success: true, 
+          message: "Folders archived and cleared",
+          url: zipUrl,
+          fileId: zipFileId
+        })).setMimeType(ContentService.MimeType.JSON);
+      } catch (err) {
+        return ContentService.createTextOutput(JSON.stringify({ success: false, error: err.message }))
+          .setMimeType(ContentService.MimeType.JSON);
+      }
+    }
+    
+    const templateId = data.templateId || TEMPLATE_DOC_ID;
+    
+    // 1. ตรวจสอบโฟลเดอร์สำหรับจัดเก็บ
+    const folder = getOrCreateDivisionFolder(
+      data.divisionName || 'ไม่ระบุกอง', 
+      data.divisionFolderId,
+      data.fiscalYear || '2569'
+    );
+    
+    // 2. ตั้งชื่อไฟล์ตามเดือนและเลขที่ กนย.
+    const docName = formatDocName(data);
+    
+    // 3. สร้างสำเนาจาก Template
+    const templateFile = DriveApp.getFileById(templateId);
+    const newDocFile = templateFile.makeCopy(docName, folder);
+    const docId = newDocFile.getId();
+    
+    const doc = DocumentApp.openById(docId);
+    const body = doc.getBody();
+    
+    // แทนที่ข้อความทั่วไป
+    body.replaceText('{{DOC_NUMBER}}', data.docNumber || '...................');
+    body.replaceText('{{THAI_DATE}}', data.thaiDate ? toThaiNumerals(data.thaiDate) : '..........................................................');
+    body.replaceText('{{FISCAL_YEAR}}', data.fiscalYear ? toThaiNumerals(data.fiscalYear) : '...................');
+    body.replaceText('{{BUDDHIST_YEAR}}', data.buddhistYear ? toThaiNumerals(data.buddhistYear) : '...................');
+    
+    body.replaceText('{{COMMANDER_NAME}}', data.commanderName || '');
+    body.replaceText('{{COMMANDER_POSITION}}', data.commanderPosition || '');
+    
+    // 4. แทรกส่วนของ ผอ.กอง (รวมลายเซ็น ชื่อ ตำแหน่ง และจัดกึ่งกลาง) ลงใน {{COMMANDER_STAMP}}
+    if (data.commanderName) {
+      replaceCommanderStamp(body, data);
     } else {
-      body.replaceText("{{SUPERVISING_COMMANDER_SIGNATURE}}", "(รอลงลายมือชื่อ)");
+      body.replaceText('{{COMMANDER_STAMP}}', '');
     }
-
-    // Render Table
-    let tablePlaceholder = body.findText("{{OVERTIME_TABLE}}");
-    if (tablePlaceholder) {
-      const tableEl = tablePlaceholder.getElement();
-      const parent = tableEl.getParent(); // The paragraph containing {{OVERTIME_TABLE}}
-      const parentIdx = body.getChildIndex(parent);
+    
+    // 5. แทรกตารางรายชื่อ OT
+    const mergeRequests = insertOvertimeTable(body, data.employees);
+    
+    // 6. ประทับตรา Executive ลงใน {{EXECUTIVE_STAMP}}
+    if (data.executiveName) {
+      replaceExecutiveStamp(body, data);
+    } else {
+      body.replaceText('{{EXECUTIVE_STAMP}}', '');
+    }
+    
+    // 6.5 สร้างสำเนาคู่ฉบับ (ปิดใช้งานตามคำขอ)
+    // createDuplicateCopy(body);
+    
+    // บันทึกการเปลี่ยนแปลงของเอกสาร Docs เพื่อให้ REST API เห็นโครงสร้างล่าสุด
+    doc.saveAndClose();
+    
+    // 6.7 ทำการ Merge Cells แนวตั้งผ่าน REST API
+    try {
+      if (mergeRequests && mergeRequests.length > 0) {
+        mergeTableCellsViaAPI(docId, mergeRequests);
+      }
+    } catch (mergeErr) {
+      console.log('Merge Error:', mergeErr.message || mergeErr);
+    }
+    
+    // 6.8 ลบ Marker <<OT_TABLE>> ทิ้ง
+    const doc2 = DocumentApp.openById(docId);
+    let marker = doc2.getBody().findText('<<OT_TABLE>>');
+    while (marker) {
+      marker.getElement().getParent().removeFromParent();
+      marker = doc2.getBody().findText('<<OT_TABLE>>');
+    }
+    doc2.saveAndClose();
+    
+    // 7. Export ไฟล์เป็น PDF (หรือคงไว้เป็น DOCX/Google Docs)
+    let finalFileUrl = '';
+    const tempFile = DriveApp.getFileById(docId);
+    
+    if (data.format === 'pdf') {
+      const pdfBlob = tempFile.getAs('application/pdf');
+      pdfBlob.setName(docName + '.pdf');
+      const pdfFile = folder.createFile(pdfBlob);
+      pdfFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+      finalFileUrl = pdfFile.getUrl();
       
-      // Remove the placeholder text
-      tableEl.asText().deleteText(tablePlaceholder.getStartOffset(), tablePlaceholder.getEndOffsetInclusive());
-
-      // Insert Table
-      const tableData = [["ลำดับที่", "ชื่อ-สกุล", "ตำแหน่ง", "วัน/เวลาที่ปฏิบัติงาน", "ภารกิจ"]];
-      
-      requests.forEach((req, idx) => {
-        const datetimeStr = `${req.request_date_th}\nเวลา ${req.ot_start_time} - ${req.ot_end_time} น.`;
-        tableData.push([
-          String(idx + 1),
-          req.requester_full_name,
-          req.requester_position_th,
-          datetimeStr,
-          req.task
-        ]);
-      });
-
-      const docTable = body.insertTable(parentIdx, tableData);
-      
-      // Basic table styling
-      const headerRow = docTable.getRow(0);
-      for (let i = 0; i < headerRow.getNumCells(); i++) {
-         headerRow.getCell(i).setBackgroundColor("#E8F0FE");
+      tempFile.setTrashed(true);
+    } else {
+      tempFile.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+      finalFileUrl = tempFile.getUrl();
+    }
+    
+    // 8. ส่ง Callback กลับไปหา Next.js (optional - ล้มเหลวได้ไม่กระทบ)
+    if (data.callbackUrl) {
+      try {
+        UrlFetchApp.fetch(data.callbackUrl, {
+          method: 'post',
+          contentType: 'application/json',
+          payload: JSON.stringify({ 
+            success: true, 
+            url: finalFileUrl,
+            documentId: data.documentId
+          }),
+          muteHttpExceptions: true
+        });
+      } catch (cbErr) {
+        console.log('Callback failed (ไม่กระทบการสร้างเอกสาร):', cbErr.message);
       }
     }
 
-    // Save and close
-    doc.saveAndClose();
+    return ContentService.createTextOutput(JSON.stringify({ 
+      success: true, 
+      url: finalFileUrl,
+      folderId: folder.getId()
+    })).setMimeType(ContentService.MimeType.JSON);
 
-    // 4. Convert to PDF
-    const safeMemoName = memoNumber.replace(/\//g, "-");
-    const finalFileName = `บันทึก OT ${dept.name_th} - ${safeMemoName}.pdf`;
-    
-    const pdfBlob = tempFile.getAs(MimeType.PDF);
-    pdfBlob.setName(finalFileName);
-    const finalPdfFile = targetFolder.createFile(pdfBlob);
-    
-    // Delete temp doc
-    tempFile.setTrashed(true);
-
-    const fileUrl = finalPdfFile.getUrl();
-
-    // 5. Send LINE Notify
-    let lineSuccess = false;
-    if (dept.line_notify_token) {
-       const msg = `📢 อนุมัติ OT เรียบร้อย!\nแผนก: ${dept.name_th}\nเลขที่บันทึก: ${memoNumber}\nจำนวน: ${requests.length} รายการ\n📄 ดูเอกสาร: ${fileUrl}`;
-       lineSuccess = sendLineNotify(dept.line_notify_token, msg);
-    }
-
-    return jsonResponse({
-      success: true,
-      file_url: fileUrl,
-      file_name: finalFileName,
-      line_notified: lineSuccess
-    });
-
-  } catch (err) {
-    Logger.log(err);
-    return jsonResponse({ success: false, error: err.toString() }, 500);
-  }
-}
-
-// Handle GET for testing
-function doGet() {
-  return HtmlService.createHtmlOutput("Easy-OT Webhook is active.");
-}
-
-// Handle OPTIONS (CORS preflight)
-function doOptions() {
-  const output = ContentService.createTextOutput("");
-  output.setMimeType(ContentService.MimeType.TEXT);
-  output.setHeader("Access-Control-Allow-Origin", "*");
-  output.setHeader("Access-Control-Allow-Methods", "POST, GET, OPTIONS");
-  output.setHeader("Access-Control-Allow-Headers", "Content-Type, X-GAS-Secret");
-  return output;
-}
-
-// Helper to format JSON responses with CORS headers
-function jsonResponse(data, statusCode = 200) {
-  const output = ContentService.createTextOutput(JSON.stringify(data));
-  output.setMimeType(ContentService.MimeType.JSON);
-  
-  // Note: GAS ignores custom headers in TextOutput but we try anyway
-  return output;
-}
-
-// Helper: Send LINE Notify
-function sendLineNotify(token, message) {
-  try {
-    const url = "https://notify-api.line.me/api/notify";
-    const options = {
-      method: "post",
-      headers: {
-         "Authorization": "Bearer " + token
-      },
-      payload: {
-         "message": message
-      },
-      muteHttpExceptions: true
-    };
-    const res = UrlFetchApp.fetch(url, options);
-    return res.getResponseCode() === 200;
-  } catch (err) {
-    Logger.log("LINE Notify error: " + err);
-    return false;
+  } catch (error) {
+    return ContentService.createTextOutput(JSON.stringify({ 
+      success: false, 
+      error: error.message 
+    })).setMimeType(ContentService.MimeType.JSON);
   }
 }
