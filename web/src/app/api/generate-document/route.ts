@@ -115,18 +115,25 @@ export async function POST(request: Request) {
           })
         }
         if (r.reason) {
-          peopleMap.get(r.user_id).tasks.add(r.reason)
+          peopleMap.get(r.user_id).tasks.add(r.reason.trim())
         }
       })
 
-      // Get all unique tasks for the whole group
-      const allTasks = new Set()
+      // Get all unique tasks across the whole group (case-insensitive dedup)
+      const seenTasks = new Map<string, string>() // normalized key -> original text
       for (const p of peopleMap.values()) {
         for (const t of p.tasks) {
-          allTasks.add(t)
+          const key = (t as string).toLowerCase().replace(/\s+/g, ' ')
+          if (!seenTasks.has(key)) {
+            seenTasks.set(key, t as string)
+          }
         }
       }
-      const groupTaskCol = Array.from(allTasks).map(t => `- ${t}`).join('\n')
+      const uniqueTasks = Array.from(seenTasks.values())
+      const groupTaskCol = [
+        ...uniqueTasks.map(t => `- ${t}`),
+        '- ภารกิจอื่นที่ได้รับมอบหมาย'
+      ].join('\n')
 
       const namesList = []
       let idx = 1
@@ -150,6 +157,10 @@ export async function POST(request: Request) {
 
     const employees = []
     if (wdGroup.length > 0) employees.push(...wdGroup)
+    // Add a separator row between workday and holiday sections if both exist
+    if (wdGroup.length > 0 && hdGroup.length > 0) {
+      employees.push({ date: '---', namePos: '', task: '', isSeparator: true })
+    }
     if (hdGroup.length > 0) employees.push(...hdGroup)
 
     // 4. Fetch Commander (Director) and Executive
