@@ -18,6 +18,7 @@ type User = {
   signature_url?: string | null
   division?: { id: string; name: string }
   group?: { id: string; name: string }
+  seniority_level?: number | null
 }
 
 type Division = { 
@@ -81,7 +82,7 @@ export default function UsersClient({ users, divisions, groups, isSuperAdmin, cu
   const [editingUser, setEditingUser] = useState<User | null>(null)
   const [editingDivision, setEditingDivision] = useState<Division | null>(null)
   
-  const [formData, setFormData] = useState({ full_name: '', position: '', division_id: '', group_id: '', role: 'employee', username: '', password: '', signature_url: '' })
+  const [formData, setFormData] = useState({ full_name: '', position: '', division_id: '', group_id: '', role: 'employee', username: '', password: '', signature_url: '', seniority_level: '' })
   const [divFormData, setDivFormData] = useState({ name: '' })
   const [groupFormData, setGroupFormData] = useState({ name: '', division_id: '' })
   const [execDivisionId, setExecDivisionId] = useState('')
@@ -134,7 +135,8 @@ export default function UsersClient({ users, divisions, groups, isSuperAdmin, cu
       role: 'employee', 
       username: '', 
       password: '',
-      signature_url: ''
+      signature_url: '',
+      seniority_level: '',
     })
     setShowUserModal(true)
   }
@@ -150,6 +152,7 @@ export default function UsersClient({ users, divisions, groups, isSuperAdmin, cu
       username: user.username || '',
       password: '',
       signature_url: user.signature_url || '',
+      seniority_level: user.seniority_level !== null && user.seniority_level !== undefined ? String(user.seniority_level) : '',
     })
     setShowUserModal(true)
   }
@@ -194,6 +197,7 @@ export default function UsersClient({ users, divisions, groups, isSuperAdmin, cu
           username: formData.username || undefined,
           password: formData.password || undefined,
           signature_url: formData.signature_url || null,
+          seniority_level: formData.seniority_level.trim() !== '' ? Number(formData.seniority_level) : null,
         })
         showToast('แก้ไขข้อมูลสำเร็จ', 'success')
       } else {
@@ -206,6 +210,7 @@ export default function UsersClient({ users, divisions, groups, isSuperAdmin, cu
           username: formData.username || undefined,
           password: formData.password || undefined,
           signature_url: formData.signature_url || null,
+          seniority_level: formData.seniority_level.trim() !== '' ? Number(formData.seniority_level) : null,
         })
         showToast('เพิ่มผู้ใช้สำเร็จ', 'success')
       }
@@ -553,7 +558,7 @@ export default function UsersClient({ users, divisions, groups, isSuperAdmin, cu
                                         </div>
                                         <div>
                                           <p className="text-sm font-medium text-gray-900">{user.full_name}</p>
-                                          <p className="text-xs text-gray-500">{user.position} • <span className={`text-xs text-gray-500`}>{ROLE_OPTIONS.find(r => r.value === user.role)?.label || user.role}</span></p>
+                                          <p className="text-xs text-gray-500">{user.position} • <span className={`text-xs text-gray-500`}>{ROLE_OPTIONS.find(r => r.value === user.role)?.label || user.role}</span>{user.seniority_level !== null && user.seniority_level !== undefined && <span className="text-blue-500 ml-1">(ลำดับอาวุโส: {user.seniority_level})</span>}</p>
                                         </div>
                                       </div>
                                       <div className="flex items-center gap-2 mt-2 sm:mt-0 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -607,7 +612,7 @@ export default function UsersClient({ users, divisions, groups, isSuperAdmin, cu
                                     </div>
                                     <div>
                                       <p className="text-sm font-medium text-gray-900">{user.full_name}</p>
-                                      <p className="text-xs text-gray-500">{user.position} • <span className={`text-xs text-gray-500`}>{ROLE_OPTIONS.find(r => r.value === user.role)?.label || user.role}</span></p>
+                                      <p className="text-xs text-gray-500">{user.position} • <span className={`text-xs text-gray-500`}>{ROLE_OPTIONS.find(r => r.value === user.role)?.label || user.role}</span>{user.seniority_level !== null && user.seniority_level !== undefined && <span className="text-blue-500 ml-1">(ลำดับอาวุโส: {user.seniority_level})</span>}</p>
                                     </div>
                                   </div>
                                   <div className="flex items-center gap-2 mt-2 sm:mt-0 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -661,6 +666,11 @@ export default function UsersClient({ users, divisions, groups, isSuperAdmin, cu
                     ))}
                   </select>
                 </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">ระดับอาวุโส / ลำดับตำแหน่ง (ตัวเลขน้อยขึ้นก่อน เช่น ผอ.=1, หน.กลุ่ม=2, เจ้าหน้าที่=3)</label>
+                <input type="number" className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-primary outline-none"
+                  value={formData.seniority_level} onChange={e => setFormData({...formData, seniority_level: e.target.value})} placeholder="ปล่อยว่างไว้เพื่อเป็นลำดับสุดท้าย" />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>

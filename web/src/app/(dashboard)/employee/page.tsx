@@ -4,6 +4,7 @@ import CancelOTButton from './CancelOTButton'
 import MonthSelector from './MonthSelector'
 import { format } from 'date-fns'
 import { th } from 'date-fns/locale'
+import { formatInBangkok, toBangkokTime } from '@/utils/date'
 
 import { getSessionUser } from '@/app/actions/auth'
 
@@ -24,7 +25,7 @@ export default async function EmployeeDashboard(props: { searchParams?: Promise<
     .eq('user_id', userId)
     .order('created_at', { ascending: false })
 
-  const monthQuery = (typeof searchParams.month === 'string' ? searchParams.month : '') || format(new Date(), 'yyyy-MM')
+  const monthQuery = (typeof searchParams.month === 'string' ? searchParams.month : '') || formatInBangkok(new Date(), 'yyyy-MM')
   
   if (monthQuery !== 'all') {
     const year = parseInt(monthQuery.split('-')[0])
@@ -102,12 +103,12 @@ export default async function EmployeeDashboard(props: { searchParams?: Promise<
                   return (
                     <tr key={req.id} className="hover:bg-gray-50 transition-colors">
                       <td className="px-6 py-4 whitespace-nowrap text-gray-900 font-medium">
-                        {`${format(new Date(req.start_time), 'dd MMM', { locale: th })} ${new Date(req.start_time).getFullYear() + 543}`}
+                        {`${formatInBangkok(req.start_time, 'dd MMM')} ${toBangkokTime(req.start_time).getFullYear() + 543}`}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex flex-col gap-1">
                           <span className="text-gray-900">
-                            ขอ: {format(new Date(req.start_time), 'HH:mm')} - {format(new Date(req.end_time), 'HH:mm')} น. ({req.total_hours} ชม.)
+                            ขอ: {formatInBangkok(req.start_time, 'HH:mm')} - {formatInBangkok(req.end_time, 'HH:mm')} น. ({req.total_hours} ชม.)
                           </span>
                           {req.status === 'approved' && (
                             <span className="text-sm">
@@ -115,7 +116,7 @@ export default async function EmployeeDashboard(props: { searchParams?: Promise<
                                 <span className="text-red-600">ไม่ได้ปฏิบัติงาน</span>
                               ) : req.actual_start_time ? (
                                 <span className="text-green-600 font-medium">
-                                  ทำจริง: {format(new Date(req.actual_start_time), 'HH:mm')} - {format(new Date(req.actual_end_time), 'HH:mm')} น. ({req.actual_total_hours} ชม.)
+                                  ทำจริง: {formatInBangkok(req.actual_start_time, 'HH:mm')} - {formatInBangkok(req.actual_end_time, 'HH:mm')} น. ({req.actual_total_hours} ชม.)
                                 </span>
                               ) : null}
                             </span>

@@ -391,6 +391,7 @@ export async function createUser(data: {
   password?: string
   line_uid?: string
   signature_url?: string | null
+  seniority_level?: number | null
 }) {
   const insertData: any = {
     id: crypto.randomUUID(),
@@ -401,6 +402,7 @@ export async function createUser(data: {
     role: data.role,
     line_uid: data.line_uid || `manual_${Date.now()}`,
     signature_url: data.signature_url || null,
+    seniority_level: data.seniority_level !== undefined ? data.seniority_level : null,
   }
 
   if (data.username) {
@@ -431,6 +433,7 @@ export async function updateUser(userId: string, data: {
   username?: string
   password?: string
   signature_url?: string | null
+  seniority_level?: number | null
 }) {
   const updateData: any = {}
   if (data.full_name !== undefined) updateData.full_name = data.full_name
@@ -440,6 +443,7 @@ export async function updateUser(userId: string, data: {
   if (data.role !== undefined) updateData.role = data.role
   if (data.username !== undefined) updateData.username = data.username
   if (data.signature_url !== undefined) updateData.signature_url = data.signature_url
+  if (data.seniority_level !== undefined) updateData.seniority_level = data.seniority_level
 
   if (data.password) {
     const bcrypt = await import('bcryptjs')

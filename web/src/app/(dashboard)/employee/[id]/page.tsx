@@ -3,6 +3,7 @@ import { getSessionUser } from '@/app/actions/auth'
 import Link from 'next/link'
 import { ArrowLeft, Clock, CheckCircle2, XCircle, FileText, Calendar, AlertCircle } from 'lucide-react'
 import { notFound } from 'next/navigation'
+import { toBangkokTime } from '@/utils/date'
 
 export default async function OTRequestDetailPage({ params }: { params: { id: string } }) {
   const supabase = await createClient()
@@ -69,7 +70,7 @@ export default async function OTRequestDetailPage({ params }: { params: { id: st
 
   // Formatting dates
   const formatDateTime = (dateString: string) => {
-    return new Date(dateString).toLocaleString('th-TH', {
+    return toBangkokTime(dateString).toLocaleString('th-TH', {
       year: 'numeric', month: 'short', day: 'numeric',
       hour: '2-digit', minute: '2-digit'
     })

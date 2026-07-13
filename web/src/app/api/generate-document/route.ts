@@ -67,7 +67,7 @@ export async function POST(request: Request) {
     // 2. Fetch OT requests
     const { data: otRequests, error: reqErr } = await supabase
       .from('ot_requests')
-      .select('*, user:users(full_name, position)')
+      .select('*, user:users(full_name, position, seniority_level)')
       .in('id', docRecord.request_ids)
       .order('start_time', { ascending: true })
 
@@ -111,17 +111,31 @@ export async function POST(request: Request) {
 
     // --- รวบรวมรายชื่อผู้ปฏิบัติงานทั้งหมดจากทุก Requests (รวมทั้งวันทำการและวันหยุด ไม่ซ้ำคน) ---
     const SEP = '\n---------------------------------------------------------\n'
-    const uniquePeopleMap = new Map<string, { name: string; position: string }>()
+    const uniquePeopleMap = new Map<string, { name: string; position: string; seniority_level: number | null }>()
     otRequests.forEach(r => {
       if (r.user && !uniquePeopleMap.has(r.user_id)) {
-        uniquePeopleMap.set(r.user_id, { name: r.user.full_name, position: r.user.position })
+        uniquePeopleMap.set(r.user_id, { 
+          name: r.user.full_name, 
+          position: r.user.position, 
+          seniority_level: r.user.seniority_level 
+        })
       }
+    })
+
+    // เรียงระดับตำแหน่งตามลำดับความอาวุโส (ค่าน้อยขึ้นก่อน)
+    const sortedPeople = Array.from(uniquePeopleMap.values()).sort((a, b) => {
+      const levelA = a.seniority_level !== null && a.seniority_level !== undefined ? a.seniority_level : 9999
+      const levelB = b.seniority_level !== null && b.seniority_level !== undefined ? b.seniority_level : 9999
+      if (levelA !== levelB) {
+        return levelA - levelB
+      }
+      return a.name.localeCompare(b.name, 'th')
     })
 
     const namesList: string[] = []
     let idx = 1
-    for (const p of uniquePeopleMap.values()) {
-      const prefix = uniquePeopleMap.size > 1 ? `${toThaiNum(idx)}) ` : ''
+    for (const p of sortedPeople) {
+      const prefix = sortedPeople.length > 1 ? `${toThaiNum(idx)}) ` : ''
       namesList.push(`${prefix}${p.name}\n${p.position}`)
       idx++
     }
