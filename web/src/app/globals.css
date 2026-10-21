@@ -2,7 +2,7 @@
 
 :root {
   --background: #f8fafc;
-  --foreground: #1e293b;
+  --foreground: #0f172a;
   --primary: #2563eb;
   --primary-light: #3b82f6;
   --primary-dark: #1d4ed8;
@@ -20,21 +20,25 @@
   --color-primary-light: var(--primary-light);
   --color-primary-dark: var(--primary-dark);
   --color-accent: var(--accent);
-  --font-sans: var(--font-sarabun), sans-serif;
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-sarabun), system-ui, -apple-system, sans-serif;
+  --font-heading: var(--font-heading), var(--font-sarabun), sans-serif;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: 'Sarabun', Arial, Helvetica, sans-serif;
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Force light mode on all inputs */
+h1, h2, h3, h4, .font-display {
+  font-family: var(--font-heading);
+}
+
+/* Light mode for form controls with modern focus rings */
 input, select, textarea {
-  color: #1e293b !important;
+  color: #0f172a !important;
   background-color: #ffffff !important;
 }
 
@@ -42,14 +46,14 @@ input::placeholder, textarea::placeholder {
   color: #94a3b8 !important;
 }
 
-/* Smooth transitions globally */
-* {
-  transition-property: color, background-color, border-color, box-shadow;
+/* Smooth micro-interactions */
+button, a, input, select, textarea {
+  transition-property: color, background-color, border-color, box-shadow, transform, opacity;
   transition-duration: 150ms;
-  transition-timing-function: ease-in-out;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Custom scrollbar */
+/* Custom modern scrollbar */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
@@ -59,17 +63,74 @@ input::placeholder, textarea::placeholder {
 }
 ::-webkit-scrollbar-thumb {
   background: #cbd5e1;
-  border-radius: 3px;
+  border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
 }
 
-/* Role badges */
-.badge-employee { background: #f0fdf4; color: #166534; border-color: #bbf7d0; }
-.badge-supervisor { background: #eff6ff; color: #1e40af; border-color: #bfdbfe; }
-.badge-director { background: #faf5ff; color: #6b21a8; border-color: #e9d5ff; }
-.badge-executive { background: #fef3c7; color: #92400e; border-color: #fde68a; }
-.badge-sub_admin { background: #f0f9ff; color: #075985; border-color: #bae6fd; }
-.badge-super_admin { background: #fef2f2; color: #991b1b; border-color: #fecaca; }
+/* Glassmorphism surfaces */
+.glass-card {
+  background: rgba(255, 255, 255, 0.88);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(226, 232, 240, 0.85);
+  box-shadow: 0 4px 20px -2px rgba(15, 23, 42, 0.04), 0 2px 6px -1px rgba(15, 23, 42, 0.02);
+}
 
+.glass-card-hover {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+.glass-card-hover:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 12px 28px -4px rgba(15, 23, 42, 0.08), 0 4px 12px -2px rgba(15, 23, 42, 0.04);
+  border-color: rgba(203, 213, 225, 0.9);
+}
+
+.glass-panel {
+  background: rgba(255, 255, 255, 0.75);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+}
+
+/* Refined role badges */
+.badge-employee { 
+  background: #ecfdf5; 
+  color: #065f46; 
+  border-color: #a7f3d0; 
+}
+.badge-supervisor { 
+  background: #eff6ff; 
+  color: #1e40af; 
+  border-color: #bfdbfe; 
+}
+.badge-director { 
+  background: #faf5ff; 
+  color: #6b21a8; 
+  border-color: #e9d5ff; 
+}
+.badge-executive { 
+  background: #fffbeb; 
+  color: #92400e; 
+  border-color: #fde68a; 
+}
+.badge-sub_admin { 
+  background: #f0f9ff; 
+  color: #0369a1; 
+  border-color: #bae6fd; 
+}
+.badge-super_admin { 
+  background: #fef2f2; 
+  color: #991b1b; 
+  border-color: #fecaca; 
+}
+
+/* Animated subtle pulse for live indicators */
+@keyframes soft-pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.7; transform: scale(1.08); }
+}
+.animate-soft-pulse {
+  animation: soft-pulse 2.5s infinite ease-in-out;
+}

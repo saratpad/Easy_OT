@@ -1,6 +1,23 @@
 'use client'
 
-import { CheckCircle, XCircle, Search, ChevronRight, ChevronDown, Folder, Users, AlertCircle } from 'lucide-react'
+import { 
+  CheckCircle2, 
+  XCircle, 
+  Search, 
+  ChevronRight, 
+  ChevronDown, 
+  Folder, 
+  Users, 
+  AlertCircle,
+  Clock,
+  Calendar,
+  CheckCheck,
+  Building2,
+  Filter,
+  Sparkles,
+  ShieldCheck,
+  UserCheck
+} from 'lucide-react'
 import { useState, useMemo } from 'react'
 import { format } from 'date-fns'
 import { th } from 'date-fns/locale'
@@ -58,7 +75,8 @@ export default function ApproverClient({
   const requests = activeTab === 'pending' ? pendingRequests : activeTab === 'history' ? historyRequests : (certificationRequests || [])
 
   const filteredRequests = requests.filter(req => {
-    const matchName = req.user?.full_name?.toLowerCase().includes(searchQuery.toLowerCase())
+    const matchName = req.user?.full_name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                      req.reason?.toLowerCase().includes(searchQuery.toLowerCase())
     if (!matchName) return false
 
     if (activeTab === 'history') {
@@ -92,7 +110,19 @@ export default function ApproverClient({
     return grouped
   }, [filteredRequests])
 
-  const [expandedNodes, setExpandedNodes] = useState<Set<string>>(new Set())
+  // Automatically expand all nodes on initial load for convenience
+  const initialExpanded = useMemo(() => {
+    const set = new Set<string>()
+    Object.keys(groupedRequests).forEach(div => {
+      set.add(`div-${div}`)
+      Object.keys(groupedRequests[div] || {}).forEach(grp => {
+        set.add(`group-${div}-${grp}`)
+      })
+    })
+    return set
+  }, [groupedRequests])
+
+  const [expandedNodes, setExpandedNodes] = useState<Set<string>>(initialExpanded)
 
   const toggleNode = (nodeId: string) => {
     const next = new Set(expandedNodes)
@@ -102,29 +132,6 @@ export default function ApproverClient({
       next.add(nodeId)
     }
     setExpandedNodes(next)
-  }
-
-  // Helpers to get unreviewed count
-  const getPendingCountForGroup = (divName: string, groupName: string) => {
-    if (activeTab === 'pending') {
-      return groupedRequests[divName]?.[groupName]?.filter(r => r.status === 'pending').length || 0
-    }
-    if (activeTab === 'certification') {
-      // In certification tab, ALL grouped requests are pending certification, 
-      // because we only pass `is_certified = false` requests here.
-      return groupedRequests[divName]?.[groupName]?.length || 0
-    }
-    return 0
-  }
-
-  const getPendingCountForDivision = (divName: string) => {
-    if (activeTab === 'pending') {
-      return Object.values(groupedRequests[divName] || {}).flat().filter(r => r.status === 'pending').length
-    }
-    if (activeTab === 'certification') {
-      return Object.values(groupedRequests[divName] || {}).flat().length
-    }
-    return 0
   }
 
   const toggleSelect = (id: string) => {
@@ -208,139 +215,207 @@ export default function ApproverClient({
     }
   }
 
+  const roleLabel = userRole === 'director' 
+    ? 'ผู้อำนวยการกอง (ขั้นที่ 2)' 
+    : userRole === 'supervisor' 
+    ? 'ผู้อำนวยการกลุ่ม (ขั้นที่ 1)' 
+    : isAdmin ? 'ผู้ดูแลระบบ (Admin Monitor)' : 'ผู้อนุมัติ'
+
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-bold text-gray-900">แดชบอร์ดผู้อนุมัติ</h2>
-          <p className="text-sm text-gray-500 mt-1">ตรวจสอบและอนุมัติคำร้องขอ OT จากเจ้าหน้าที่ในสังกัด</p>
+      {/* Top Banner / Metric Header */}
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-blue-700 via-indigo-700 to-indigo-900 p-6 md:p-8 text-white shadow-xl">
+        <div className="absolute -top-16 -right-16 w-64 h-64 bg-white/10 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute -bottom-16 -left-16 w-64 h-64 bg-cyan-400/20 rounded-full blur-3xl pointer-events-none" />
+
+        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div>
+            <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/15 backdrop-blur-md border border-white/20 text-xs font-semibold text-blue-100 mb-3">
+              <ShieldCheck className="w-3.5 h-3.5 text-cyan-300" />
+              <span>สิทธิ์การอนุมัติ: {roleLabel}</span>
+            </div>
+            <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight text-white">
+              พิจารณาคำร้องขอปฏิบัติงานนอกเวลา (OT)
+            </h1>
+            <p className="mt-1 text-sm text-blue-100/90 max-w-xl">
+              ตรวจสอบเหตุผล ความจำเป็น และอนุมัติการปฏิบัติงานนอกเวลาของเจ้าหน้าที่ในสังกัดตามขั้นตอนระเบียบราชการ
+            </p>
+          </div>
+
+          {/* Quick Metrics */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            <div className="bg-white/10 backdrop-blur-md border border-white/15 rounded-xl p-3 text-center min-w-[100px]">
+              <span className="text-xs text-blue-200 block font-medium">รอพิจารณา</span>
+              <span className="text-2xl font-black text-amber-300">{pendingRequests.length}</span>
+              <span className="text-[10px] text-blue-200 block">รายการ</span>
+            </div>
+            <div className="bg-white/10 backdrop-blur-md border border-white/15 rounded-xl p-3 text-center min-w-[100px]">
+              <span className="text-xs text-blue-200 block font-medium">พิจารณาแล้ว</span>
+              <span className="text-2xl font-black text-emerald-300">{historyRequests.length}</span>
+              <span className="text-[10px] text-blue-200 block">รายการ</span>
+            </div>
+            {certificationRequests !== undefined && (
+              <div className="bg-white/10 backdrop-blur-md border border-white/15 rounded-xl p-3 text-center col-span-2 sm:col-span-1 min-w-[100px]">
+                <span className="text-xs text-blue-200 block font-medium">รอรับรองผล</span>
+                <span className="text-2xl font-black text-purple-300">{certificationRequests.length}</span>
+                <span className="text-[10px] text-blue-200 block">รายการ</span>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="border-b border-gray-200">
-        <nav className="-mb-px flex space-x-8">
-          <button
-             onClick={() => { setActiveTab('pending'); setSelectedIds(new Set()); }}
-            className={`whitespace-nowrap pb-4 px-1 border-b-2 font-medium text-sm ${
+      {/* Modern Segmented Navigation Tabs */}
+      <div className="glass-panel p-1.5 rounded-2xl flex flex-wrap gap-2 items-center">
+        <button
+          onClick={() => { setActiveTab('pending'); setSelectedIds(new Set()); }}
+          className={`relative flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 ${
+            activeTab === 'pending'
+              ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/25'
+              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100/70'
+          }`}
+        >
+          <Clock className={`w-4 h-4 ${activeTab === 'pending' ? 'text-white' : 'text-gray-400'}`} />
+          <span>รายการรอพิจารณา</span>
+          {pendingRequests.length > 0 && (
+            <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${
               activeTab === 'pending'
-                ? 'border-primary text-primary'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            }`}
-          >
-            รายการรออนุมัติ
-            {pendingRequests.length > 0 && (
-              <span className="ml-2 bg-orange-100 text-orange-600 py-0.5 px-2.5 rounded-full text-xs">
-                {pendingRequests.length}
-              </span>
-            )}
-          </button>
-          <button
-            onClick={() => { setActiveTab('history'); setSelectedIds(new Set()); }}
-            className={`whitespace-nowrap pb-4 px-1 border-b-2 font-medium text-sm ${
-              activeTab === 'history'
-                ? 'border-primary text-primary'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            }`}
-          >
-            ประวัติการอนุมัติ
-          </button>
-          {certificationRequests !== undefined && (
-            <button
-              onClick={() => { setActiveTab('certification'); setSelectedIds(new Set()); }}
-              className={`whitespace-nowrap pb-4 px-1 border-b-2 font-medium text-sm ${
-                activeTab === 'certification'
-                  ? 'border-primary text-primary'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              {isAdmin ? 'ติดตามการรับรอง' : 'รับรองการปฏิบัติงาน'}
-              <span className="ml-2 bg-purple-100 text-purple-600 py-0.5 px-2.5 rounded-full text-xs">
-                {certificationRequests.length}
-              </span>
-            </button>
+                ? 'bg-white text-blue-700'
+                : 'bg-amber-100 text-amber-800'
+            }`}>
+              {pendingRequests.length}
+            </span>
           )}
-        </nav>
+        </button>
+
+        <button
+          onClick={() => { setActiveTab('history'); setSelectedIds(new Set()); }}
+          className={`relative flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 ${
+            activeTab === 'history'
+              ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-blue-500/25'
+              : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100/70'
+          }`}
+        >
+          <CheckCheck className={`w-4 h-4 ${activeTab === 'history' ? 'text-white' : 'text-gray-400'}`} />
+          <span>ประวัติการพิจารณา</span>
+          {historyRequests.length > 0 && (
+            <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${
+              activeTab === 'history' ? 'bg-white text-blue-700' : 'bg-gray-100 text-gray-700'
+            }`}>
+              {historyRequests.length}
+            </span>
+          )}
+        </button>
+
+        {certificationRequests !== undefined && (
+          <button
+            onClick={() => { setActiveTab('certification'); setSelectedIds(new Set()); }}
+            className={`relative flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 ${
+              activeTab === 'certification'
+                ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md shadow-purple-500/25'
+                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100/70'
+            }`}
+          >
+            <UserCheck className={`w-4 h-4 ${activeTab === 'certification' ? 'text-white' : 'text-gray-400'}`} />
+            <span>{isAdmin ? 'ติดตามการรับรองเวลา' : 'รับรองการปฏิบัติงานจริง'}</span>
+            <span className={`px-2 py-0.5 rounded-full text-xs font-bold ${
+              activeTab === 'certification' ? 'bg-white text-purple-700' : 'bg-purple-100 text-purple-800'
+            }`}>
+              {certificationRequests.length}
+            </span>
+          </button>
+        )}
       </div>
 
-      {/* Filter / Search & Bulk Actions */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div className="flex items-center gap-3 w-full max-w-md relative">
-          <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-            <Search className="h-5 w-5 text-gray-400" />
-          </div>
+      {/* Filter / Search & Bulk Actions Bar */}
+      <div className="glass-panel p-4 rounded-2xl flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        {/* Search */}
+        <div className="relative flex-1 max-w-md">
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
           <input
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="block w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-primary focus:border-primary sm:text-sm"
-            placeholder="ค้นหาชื่อผู้ขอ..."
+            className="w-full pl-10 pr-4 py-2 bg-white/80 border border-gray-200/80 rounded-xl text-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 transition-all shadow-sm"
+            placeholder="ค้นหาชื่อเจ้าหน้าที่ หรือเหตุผลการขอ OT..."
           />
         </div>
 
-        {activeTab === 'pending' && filteredRequests.length > 0 && !isAdmin && (
-          <div className="flex items-center gap-2">
-            <label className="flex items-center gap-2 text-sm text-gray-700 mr-2 cursor-pointer">
-              <input 
-                type="checkbox" 
-                className="w-4 h-4 text-primary border-gray-300 rounded focus:ring-primary"
-                checked={selectedIds.size === filteredRequests.length}
-                onChange={toggleSelectAll}
-              />
-              เลือกทั้งหมด
-            </label>
-            <button 
-              onClick={handleBulkApprove}
-              disabled={selectedIds.size === 0 || isBulkProcessing}
-              className="inline-flex justify-center items-center px-3 py-1.5 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50"
-            >
-              <CheckCircle className="w-4 h-4 mr-1.5" />
-              อนุมัติที่เลือก ({selectedIds.size})
-            </button>
-            <button 
-              onClick={handleBulkReject}
-              disabled={selectedIds.size === 0 || isBulkProcessing}
-              className="inline-flex justify-center items-center px-3 py-1.5 bg-white border border-red-200 text-red-600 text-sm font-medium rounded-lg hover:bg-red-50 transition-colors disabled:opacity-50"
-            >
-              <XCircle className="w-4 h-4 mr-1.5" />
-              ปฏิเสธที่เลือก
-            </button>
-          </div>
-        )}
-        
+        {/* History specific filters */}
         {activeTab === 'history' && (
-          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
-            <div className="flex items-center gap-2 bg-white px-3 py-2 border border-gray-300 rounded-lg">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <div className="flex items-center gap-2 bg-white/80 px-3 py-1.5 border border-gray-200/80 rounded-xl text-sm shadow-sm">
               <input
                 type="checkbox"
                 id="enable-date-filter"
                 checked={isDateFilterEnabled}
                 onChange={(e) => setIsDateFilterEnabled(e.target.checked)}
-                className="w-4 h-4 text-primary border-gray-300 rounded focus:ring-primary cursor-pointer"
+                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 cursor-pointer"
               />
-              <label htmlFor="enable-date-filter" className="text-sm text-gray-700 cursor-pointer">ค้นหาด้วยวันที่</label>
+              <label htmlFor="enable-date-filter" className="text-xs text-gray-600 font-medium cursor-pointer">
+                กรองเฉพาะวัน
+              </label>
               <input
                 type="date"
                 value={historyDateFilter}
                 onChange={(e) => setHistoryDateFilter(e.target.value)}
                 disabled={!isDateFilterEnabled}
-                className="ml-2 text-sm bg-transparent focus:outline-none disabled:opacity-50"
+                className="text-xs bg-transparent focus:outline-none disabled:opacity-40"
               />
             </div>
+
             <select
               value={historyStatusFilter}
               onChange={(e) => setHistoryStatusFilter(e.target.value as any)}
-              className="px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-primary w-full sm:w-auto"
+              className="px-3 py-2 border border-gray-200/80 rounded-xl text-xs font-medium bg-white/80 focus:outline-none focus:ring-2 focus:ring-blue-500/30 shadow-sm"
             >
               <option value="all">สถานะทั้งหมด</option>
               <option value="approved">อนุมัติแล้ว</option>
               <option value="rejected">ไม่อนุมัติ</option>
             </select>
+
             <MonthSelector />
+          </div>
+        )}
+
+        {/* Bulk Action Controls */}
+        {activeTab === 'pending' && filteredRequests.length > 0 && !isAdmin && (
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="inline-flex items-center gap-2 px-3 py-1.5 bg-white/80 border border-gray-200/80 rounded-xl text-xs font-semibold text-gray-700 cursor-pointer hover:bg-gray-50 shadow-sm select-none">
+              <input 
+                type="checkbox" 
+                className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500"
+                checked={selectedIds.size > 0 && selectedIds.size === filteredRequests.length}
+                onChange={toggleSelectAll}
+              />
+              <span>เลือกทั้งหมด ({filteredRequests.length})</span>
+            </label>
+
+            {selectedIds.size > 0 && (
+              <div className="inline-flex items-center gap-2 animate-fadeIn">
+                <button 
+                  onClick={handleBulkApprove}
+                  disabled={isBulkProcessing}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-semibold rounded-xl shadow-md shadow-emerald-600/20 transition-all disabled:opacity-50"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>อนุมัติที่เลือก ({selectedIds.size})</span>
+                </button>
+                <button 
+                  onClick={handleBulkReject}
+                  disabled={isBulkProcessing}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white border border-rose-200 text-rose-600 hover:bg-rose-50 text-xs font-semibold rounded-xl transition-all disabled:opacity-50"
+                >
+                  <XCircle className="w-4 h-4" />
+                  <span>ไม่อนุมัติ</span>
+                </button>
+              </div>
+            )}
           </div>
         )}
       </div>
 
+      {/* Main Content Area */}
       {activeTab === 'certification' && !isAdmin ? (
         <CertificationTab 
           requests={certificationRequests || []} 
@@ -348,207 +423,206 @@ export default function ApproverClient({
           userRole={userRole} 
         />
       ) : (
-        <div className="bg-white border border-gray-100 rounded-xl shadow-sm overflow-hidden flex flex-col xl:flex-row min-h-[600px]">
-          {/* List Section */}
-          <div className="flex-1 min-w-0 border-r border-gray-100">
-            {filteredRequests.length === 0 ? (
-              <div className="p-8 text-center text-gray-500">
-                ไม่มีรายการคำร้อง
+        <div className="space-y-4">
+          {filteredRequests.length === 0 ? (
+            <div className="glass-panel p-12 text-center rounded-2xl">
+              <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-blue-50 flex items-center justify-center text-blue-500">
+                <CheckCircle2 className="w-8 h-8" />
               </div>
-            ) : (
-              Object.entries(groupedRequests).map(([divName, groupsMap]) => {
-                const divPendingCount = getPendingCountForDivision(divName)
-                const divNodeId = `div-${divName}`
-                const isDivExpanded = expandedNodes.has(divNodeId)
+              <h3 className="text-base font-bold text-gray-800">ไม่มีรายการคำร้องที่ตรงกับเงื่อนไข</h3>
+              <p className="text-xs text-gray-500 mt-1 max-w-sm mx-auto">
+                {activeTab === 'pending'
+                  ? 'ยอดเยี่ยม! คุณได้พิจารณาคำร้องขอ OT ในสังกัดครบถ้วนเรียบร้อยแล้ว'
+                  : 'ไม่พบประวัติคำร้องตามการค้นหาหรือช่วงเวลาที่เลือก'}
+              </p>
+            </div>
+          ) : (
+            Object.entries(groupedRequests).map(([divName, groupsMap]) => {
+              const divPendingCount = Object.values(groupsMap).flat().filter(r => r.status === 'pending').length
+              const divTotalCount = Object.values(groupsMap).flat().length
+              const divNodeId = `div-${divName}`
+              const isDivExpanded = expandedNodes.has(divNodeId)
 
-                return (
-                  <div key={divNodeId} className="w-full">
-                    {/* Division Header */}
-                    <div 
-                      onClick={() => toggleNode(divNodeId)}
-                      className="flex items-center justify-between p-4 bg-gray-50 hover:bg-gray-100 cursor-pointer select-none transition-colors"
-                    >
-                      <div className="flex items-center gap-2">
-                        {isDivExpanded ? <ChevronDown className="w-5 h-5 text-gray-400" /> : <ChevronRight className="w-5 h-5 text-gray-400" />}
-                        <Folder className="w-5 h-5 text-primary" />
-                        <span className="font-semibold text-gray-800">{divName}</span>
+              return (
+                <div key={divNodeId} className="glass-panel rounded-2xl overflow-hidden border border-gray-200/80 shadow-sm transition-all">
+                  {/* Division Card Header */}
+                  <div 
+                    onClick={() => toggleNode(divNodeId)}
+                    className="flex items-center justify-between p-4 bg-gradient-to-r from-slate-50/90 via-indigo-50/30 to-white hover:from-blue-50/50 cursor-pointer select-none transition-colors border-b border-gray-100"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-lg bg-blue-100/70 text-blue-700 flex items-center justify-center shrink-0">
+                        <Building2 className="w-4 h-4" />
                       </div>
-                      {divPendingCount > 0 && (
-                        <span className="flex h-5 items-center px-2 text-xs font-bold text-white bg-red-500 rounded-full">
-                          {divPendingCount}
-                        </span>
-                      )}
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-gray-900 text-sm md:text-base">{divName}</span>
+                          <span className="text-xs text-gray-400 font-medium">({divTotalCount} รายการ)</span>
+                        </div>
+                      </div>
                     </div>
 
-                    {/* Groups */}
-                    {isDivExpanded && (
-                      <div className="divide-y divide-gray-50 border-t border-gray-100 bg-white">
-                        {Object.entries(groupsMap).map(([groupName, reqs]) => {
-                          const groupPendingCount = getPendingCountForGroup(divName, groupName)
-                          const groupNodeId = `group-${divName}-${groupName}`
-                          const isGroupExpanded = expandedNodes.has(groupNodeId)
+                    <div className="flex items-center gap-3">
+                      {divPendingCount > 0 && activeTab === 'pending' && (
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-500 text-white shadow-sm">
+                          รออนุมัติ {divPendingCount}
+                        </span>
+                      )}
+                      <div className="w-7 h-7 rounded-lg bg-gray-100 flex items-center justify-center text-gray-500">
+                        {isDivExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                      </div>
+                    </div>
+                  </div>
 
-                          return (
-                            <div key={groupNodeId}>
-                              {/* Group Header */}
-                              <div 
-                                onClick={() => toggleNode(groupNodeId)}
-                                className="flex items-center justify-between p-3 pl-10 hover:bg-gray-50 cursor-pointer select-none transition-colors border-b border-gray-50"
-                              >
-                                <div className="flex items-center gap-2">
-                                  {isGroupExpanded ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
-                                  <Users className="w-4 h-4 text-indigo-500" />
-                                  <span className="font-medium text-gray-700">{groupName}</span>
-                                  <span className="text-xs text-gray-400">({reqs.length} รายการ)</span>
-                                </div>
-                                {groupPendingCount > 0 && (
-                                  <span className="flex h-2 w-2 relative">
-                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                                    <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
-                                  </span>
-                                )}
+                  {/* Groups Accordion List */}
+                  {isDivExpanded && (
+                    <div className="p-3 md:p-4 space-y-3 bg-slate-50/30">
+                      {Object.entries(groupsMap).map(([groupName, reqs]) => {
+                        const groupPendingCount = reqs.filter(r => r.status === 'pending').length
+                        const groupNodeId = `group-${divName}-${groupName}`
+                        const isGroupExpanded = expandedNodes.has(groupNodeId)
+
+                        return (
+                          <div key={groupNodeId} className="bg-white rounded-xl border border-gray-200/70 overflow-hidden shadow-xs">
+                            {/* Group Header */}
+                            <div 
+                              onClick={() => toggleNode(groupNodeId)}
+                              className="flex items-center justify-between px-4 py-3 bg-gray-50/50 hover:bg-gray-100/50 cursor-pointer select-none transition-colors"
+                            >
+                              <div className="flex items-center gap-2.5">
+                                <Users className="w-4 h-4 text-indigo-600" />
+                                <span className="font-semibold text-gray-800 text-xs md:text-sm">{groupName}</span>
+                                <span className="text-xs text-gray-400">({reqs.length} รายการ)</span>
                               </div>
 
-                              {/* Requests in Group */}
-                              {isGroupExpanded && (
-                                <ul className="divide-y divide-gray-50 border-t border-gray-50">
-                                  {reqs.map(req => (
-                                    <li key={req.id} className="p-4 pl-16 hover:bg-gray-50/50 transition-colors flex flex-col xl:flex-row gap-4 items-start">
-                                      {/* Checkbox */}
-                                      {activeTab === 'pending' && !isAdmin && (
-                                        <div className="pt-1 shrink-0">
-                                          <input 
-                                            type="checkbox" 
-                                            className="w-4 h-4 text-primary border-gray-300 rounded focus:ring-primary cursor-pointer"
-                                            checked={selectedIds.has(req.id)}
-                                            onChange={() => toggleSelect(req.id)}
-                                          />
-                                        </div>
-                                      )}
+                              <div className="flex items-center gap-2">
+                                {groupPendingCount > 0 && activeTab === 'pending' && (
+                                  <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                                )}
+                                {isGroupExpanded ? <ChevronDown className="w-3.5 h-3.5 text-gray-400" /> : <ChevronRight className="w-3.5 h-3.5 text-gray-400" />}
+                              </div>
+                            </div>
 
-                                      <div className="flex justify-between items-start gap-4 flex-1">
-                                        <div className="flex-1">
-                                          <div className="flex items-center gap-2 mb-1">
-                                            <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-sm shrink-0">
-                                              {req.user?.full_name?.charAt(0) || '?'}
-                                            </div>
-                                            <div>
-                                              <p className="text-sm font-semibold text-gray-900">{req.user?.full_name}</p>
-                                              <p className="text-xs text-gray-500">{req.user?.position}</p>
-                                            </div>
+                            {/* Request Cards List inside Group */}
+                            {isGroupExpanded && (
+                              <div className="divide-y divide-gray-100">
+                                {reqs.map((req) => {
+                                  const isSelected = selectedIds.has(req.id)
+                                  const reqDate = new Date(req.start_time)
+                                  const thaiDateStr = `${format(reqDate, 'd MMMM', { locale: th })} ${reqDate.getFullYear() + 543}`
+
+                                  return (
+                                    <div 
+                                      key={req.id} 
+                                      className={`p-4 md:p-5 transition-all flex flex-col md:flex-row items-start md:items-center justify-between gap-4 ${
+                                        isSelected ? 'bg-blue-50/40' : 'hover:bg-slate-50/70'
+                                      }`}
+                                    >
+                                      {/* Left: Checkbox + User Avatar + Details */}
+                                      <div className="flex items-start gap-3.5 flex-1 min-w-0">
+                                        {activeTab === 'pending' && !isAdmin && (
+                                          <div className="pt-1 shrink-0">
+                                            <input 
+                                              type="checkbox" 
+                                              className="w-4 h-4 text-blue-600 border-gray-300 rounded focus:ring-blue-500 cursor-pointer"
+                                              checked={isSelected}
+                                              onChange={() => toggleSelect(req.id)}
+                                            />
                                           </div>
-                                          <div className="mt-3 text-sm text-gray-700 bg-gray-50 p-3 rounded w-full">
-                                            <span className="font-medium">เหตุผล:</span> {req.reason}
-                                          </div>
+                                        )}
+
+                                        <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center font-bold text-sm shadow-sm shrink-0">
+                                          {req.user?.full_name?.charAt(0) || 'ผ'}
                                         </div>
-                                        <div className="flex flex-col items-end gap-1 shrink-0 ml-4">
-                                          <div className="text-sm font-medium text-gray-900">
-                                            {`${format(new Date(req.start_time), 'dd MMM', { locale: th })} ${new Date(req.start_time).getFullYear() + 543}`} 
-                                          </div>
-                                          
-                                          <div className="flex items-center gap-2 justify-end w-full">
-                                            <div className="text-xs text-gray-500">
-                                              {format(new Date(req.start_time), 'HH:mm')} - {format(new Date(req.end_time), 'HH:mm')} น. ({req.total_hours} ชม.)
-                                            </div>
-                                            {activeTab === 'history' && (
-                                              <span className={`inline-flex items-center px-2 py-1 rounded text-xs font-medium border ${
-                                                req.status === 'approved' ? 'bg-green-50 text-green-700 border-green-200' :
-                                                req.status === 'rejected' ? 'bg-red-50 text-red-700 border-red-200' :
-                                                'bg-orange-50 text-orange-700 border-orange-200'
-                                              }`}>
-                                                {req.status === 'approved' ? 'อนุมัติแล้ว' : 
-                                                 req.status === 'rejected' ? 'ไม่อนุมัติ' : 
-                                                 `รออนุมัติขั้นต่อไป (ขั้นที่ ${req.current_step})`}
-                                              </span>
-                                            )}
+
+                                        <div className="flex-1 min-w-0">
+                                          <div className="flex flex-wrap items-center gap-2">
+                                            <h4 className="text-sm font-bold text-gray-900 truncate">
+                                              {req.user?.full_name}
+                                            </h4>
+                                            <span className="text-[11px] px-2 py-0.5 rounded-md bg-gray-100 text-gray-600 font-medium">
+                                              {req.user?.position || 'บุคลากร'}
+                                            </span>
                                           </div>
 
-                                          {activeTab === 'history' && req.status === 'approved' && (
-                                            <div className="flex items-center gap-2 justify-end w-full mt-1">
-                                              <div className="text-xs">
-                                                {req.is_worked === false ? (
-                                                  <span className="text-red-600">ไม่ได้ปฏิบัติงาน (0 ชม.)</span>
-                                                ) : (req.actual_start_time && req.actual_end_time) ? (
-                                                  <span className="text-gray-600">
-                                                    ปฏิบัติงานจริง: {format(new Date(req.actual_start_time), 'HH:mm')} - {format(new Date(req.actual_end_time), 'HH:mm')} น. ({req.actual_total_hours} ชม.)
-                                                  </span>
-                                                ) : null}
-                                              </div>
-                                              <div>
-                                                {req.certification_step === -1 ? (
-                                                  <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium border bg-red-50 text-red-700 border-red-200">ไม่อนุมัติ</span>
-                                                ) : req.is_certified ? (
-                                                  <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium border bg-emerald-50 text-emerald-700 border-emerald-200">รับรองแล้ว</span>
-                                                ) : req.certification_note && !req.is_certified ? (
-                                                  <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium border bg-blue-50 text-blue-700 border-blue-200">ปรับปรุงเวลา</span>
-                                                ) : (
-                                                  <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium border bg-amber-50 text-amber-700 border-amber-200">รอรับรอง</span>
-                                                )}
-                                              </div>
-                                            </div>
-                                          )}
+                                          {/* Reason callout */}
+                                          <div className="mt-2 text-xs text-gray-700 bg-gray-50/80 border border-gray-100 rounded-lg p-2.5">
+                                            <span className="font-semibold text-gray-900">เหตุผลขอ OT: </span>
+                                            {req.reason}
+                                          </div>
                                         </div>
                                       </div>
-                                      
-                                      {activeTab === 'pending' && !isAdmin && (
-                                        <div className="flex gap-2 shrink-0 xl:ml-4">
-                                          <button 
-                                            onClick={() => handleApprove(req.id)}
-                                            disabled={isProcessing === req.id || isBulkProcessing}
-                                            className="p-1.5 bg-green-100 text-green-700 rounded hover:bg-green-200 transition-colors disabled:opacity-50"
-                                            title="อนุมัติ"
-                                          >
-                                            <CheckCircle className="w-5 h-5" />
-                                          </button>
-                                          <button 
-                                            onClick={() => handleReject(req.id)}
-                                            disabled={isProcessing === req.id || isBulkProcessing}
-                                            className="p-1.5 bg-red-100 text-red-700 rounded hover:bg-red-200 transition-colors disabled:opacity-50"
-                                            title="ไม่อนุมัติ"
-                                          >
-                                            <XCircle className="w-5 h-5" />
-                                          </button>
-                                        </div>
-                                      )}
-                                      
-                                      {((activeTab === 'pending' && isAdmin) || activeTab === 'certification') && (
-                                        <div className="mt-2 xl:mt-0 xl:ml-4">
-                                          {activeTab === 'certification' ? (
-                                            <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium border ${
-                                              req.certification_step === 0 ? 'bg-yellow-50 text-yellow-700 border-yellow-200' :
-                                              req.certification_step === 1 ? 'bg-blue-50 text-blue-700 border-blue-200' :
-                                              'bg-gray-50 text-gray-700 border-gray-200'
-                                            }`}>
-                                              {req.certification_step === 0 ? 'รอ ผอ.กลุ่ม รับรอง' :
-                                               req.certification_step === 1 ? 'รอ ผอ.กอง รับรอง' : 'ไม่ทราบสถานะ'}
+
+                                      {/* Center / Right: Date, Time Pill, Status */}
+                                      <div className="flex flex-col sm:flex-row md:flex-col lg:flex-row items-start sm:items-center md:items-end lg:items-center gap-3 shrink-0 w-full md:w-auto justify-between md:justify-end pt-2 md:pt-0 border-t md:border-t-0 border-gray-100">
+                                        <div className="text-left md:text-right">
+                                          <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-800">
+                                            <Calendar className="w-3.5 h-3.5 text-blue-600" />
+                                            <span>{thaiDateStr}</span>
+                                          </div>
+                                          <div className="mt-1 flex items-center gap-1.5">
+                                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium bg-blue-50 text-blue-700 border border-blue-100">
+                                              <Clock className="w-3 h-3 text-blue-500" />
+                                              {format(new Date(req.start_time), 'HH:mm')} - {format(new Date(req.end_time), 'HH:mm')} น.
                                             </span>
-                                          ) : (
-                                            <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-medium border ${
-                                              req.status === 'approved' ? 'bg-green-50 text-green-700 border-green-200' :
-                                              req.status === 'rejected' ? 'bg-red-50 text-red-700 border-red-200' :
-                                              'bg-orange-50 text-orange-700 border-orange-200'
-                                            }`}>
-                                              {req.status === 'approved' ? 'อนุมัติแล้ว' : 
-                                              req.status === 'rejected' ? 'ไม่อนุมัติ' : 
-                                              `รออนุมัติขั้นต่อไป (ขั้นที่ ${req.current_step})`}
+                                            <span className="text-xs font-bold text-indigo-700">
+                                              ({req.total_hours} ชม.)
                                             </span>
+                                          </div>
+
+                                          {/* History Status Pill */}
+                                          {activeTab === 'history' && (
+                                            <div className="mt-2 flex items-center justify-end gap-1.5">
+                                              <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold ${
+                                                req.status === 'approved' 
+                                                  ? 'bg-emerald-100 text-emerald-800' 
+                                                  : req.status === 'rejected'
+                                                  ? 'bg-rose-100 text-rose-800'
+                                                  : 'bg-amber-100 text-amber-800'
+                                              }`}>
+                                                {req.status === 'approved' ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> : <XCircle className="w-3.5 h-3.5 text-rose-600" />}
+                                                {req.status === 'approved' ? 'อนุมัติแล้ว' : req.status === 'rejected' ? 'ไม่อนุมัติ' : `รอขั้นที่ ${req.current_step}`}
+                                              </span>
+                                            </div>
                                           )}
                                         </div>
-                                      )}
-                                    </li>
-                                  ))}
-                                </ul>
-                              )}
-                            </div>
-                          )
-                        })}
-                      </div>
-                    )}
-                  </div>
-                )
-              })
-            )}
-          </div>
+
+                                        {/* Action Buttons for Pending */}
+                                        {activeTab === 'pending' && !isAdmin && (
+                                          <div className="flex items-center gap-2">
+                                            <button 
+                                              onClick={() => handleApprove(req.id)}
+                                              disabled={isProcessing === req.id || isBulkProcessing}
+                                              className="inline-flex items-center gap-1.5 px-3.5 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-semibold rounded-xl shadow-md shadow-emerald-600/20 transition-all disabled:opacity-50"
+                                            >
+                                              <CheckCircle2 className="w-4 h-4" />
+                                              <span>เห็นควรอนุมัติ</span>
+                                            </button>
+                                            <button 
+                                              onClick={() => handleReject(req.id)}
+                                              disabled={isProcessing === req.id || isBulkProcessing}
+                                              className="inline-flex items-center gap-1 px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200/80 text-xs font-semibold rounded-xl transition-all disabled:opacity-50"
+                                            >
+                                              <XCircle className="w-4 h-4" />
+                                              <span>ไม่อนุมัติ</span>
+                                            </button>
+                                          </div>
+                                        )}
+                                      </div>
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+              )
+            })
+          )}
         </div>
       )}
     </div>

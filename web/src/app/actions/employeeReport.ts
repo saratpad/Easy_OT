@@ -12,6 +12,7 @@ export async function getUnreportedOTRequests() {
   try {
     const user = await getSessionUser()
     if (!user) return { data: [] }
+    if (user.id.startsWith('mock-')) return { data: [] }
 
     const nowISO = new Date().toISOString()
 

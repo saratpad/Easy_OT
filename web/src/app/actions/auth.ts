@@ -229,12 +229,22 @@ export async function getSessionUser() {
 
   if (!userId) return null
 
-  const { data: user } = await supabaseAdmin
-    .from('users')
-    .select('*, division:divisions!users_division_id_fkey(id, name, line_channel_access_token, line_target_id, drive_folder_id, doc_number_prefix, recipient_name, line_notifications_enabled), group:groups!users_group_id_fkey(id, name)')
-    .eq('id', userId)
-    .eq('is_deleted', false)
-    .single()
+  try {
+    const timeoutPromise = new Promise<{ data: null }>((_, reject) =>
+      setTimeout(() => reject(new Error('Session user timeout')), 1500)
+    )
+    const { data: user } = await Promise.race([
+      supabaseAdmin
+        .from('users')
+        .select('*, division:divisions!users_division_id_fkey(id, name, line_channel_access_token, line_target_id, drive_folder_id, doc_number_prefix, recipient_name, line_notifications_enabled), group:groups!users_group_id_fkey(id, name)')
+        .eq('id', userId)
+        .eq('is_deleted', false)
+        .single(),
+      timeoutPromise
+    ]) as any
 
-  return user || null
+    return user || null
+  } catch {
+    return null
+  }
 }

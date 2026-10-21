@@ -1,7 +1,21 @@
 import { useState, useMemo } from 'react'
 import { format } from 'date-fns'
 import { th } from 'date-fns/locale'
-import { CheckCircle, XCircle, AlertCircle, Edit2, Clock, X, ChevronDown, ChevronRight, Users, Info } from 'lucide-react'
+import { 
+  CheckCircle2, 
+  XCircle, 
+  AlertCircle, 
+  Edit3, 
+  Clock, 
+  X, 
+  ChevronDown, 
+  ChevronRight, 
+  Users, 
+  Building2,
+  Calendar,
+  CheckCheck,
+  UserCheck
+} from 'lucide-react'
 import { certifyBySupervisor, reviewByDirector, bulkCertifyBySupervisor, bulkNotWorkedBySupervisor, bulkReviewByDirector } from '@/app/actions/certification'
 
 type OTRequest = {
@@ -57,7 +71,6 @@ export default function CertificationTab({
     else next.add(nodeId)
     setExpandedNodes(next)
   }
-
 
   // Bulk Action State
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
@@ -249,292 +262,370 @@ export default function CertificationTab({
 
   const renderRequestCard = (req: OTRequest, isHistory: boolean) => {
     const isProcessing = processingId === req.id
+    const isSelected = selectedIds.has(req.id)
+    const reqDate = new Date(req.start_time)
+    const thaiDateStr = `${format(reqDate, 'd MMM', { locale: th })} ${reqDate.getFullYear() + 543}`
     
     return (
-      <div key={req.id} className="p-4 pl-12 hover:bg-gray-50/50 transition-colors flex flex-col xl:flex-row gap-4 items-start relative">
-        {!isHistory && (
-          <div className="absolute left-4 top-5">
-            <input 
-              type="checkbox" 
-              checked={selectedIds.has(req.id)}
-              onChange={() => toggleSelection(req.id)}
-              className="rounded text-primary focus:ring-primary w-4 h-4 cursor-pointer"
-            />
-          </div>
-        )}
-        <div className={`flex justify-between items-start gap-4 flex-1 ${!isHistory ? 'ml-2' : 'ml-4'}`}>
-          <div className="flex-1">
-            <div className="flex items-center gap-2 mb-1">
-              <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-sm shrink-0">
-                {req.user?.full_name?.charAt(0) || '?'}
-              </div>
-              <div>
-                <p className="text-sm font-semibold text-gray-900">{req.user?.full_name}</p>
-                <p className="text-xs text-gray-500">{req.user?.position}</p>
-              </div>
+      <div 
+        key={req.id} 
+        className={`p-4 md:p-5 transition-all flex flex-col md:flex-row items-start md:items-center justify-between gap-4 ${
+          isSelected ? 'bg-purple-50/40' : 'hover:bg-slate-50/70'
+        }`}
+      >
+        {/* Left: Checkbox + User avatar + reason */}
+        <div className="flex items-start gap-3.5 flex-1 min-w-0">
+          {!isHistory && (
+            <div className="pt-1 shrink-0">
+              <input 
+                type="checkbox" 
+                checked={isSelected}
+                onChange={() => toggleSelection(req.id)}
+                className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500 cursor-pointer"
+              />
             </div>
-            <div className="mt-3 text-sm text-gray-700 bg-gray-50 p-3 rounded w-full">
-              <span className="font-medium">เหตุผล:</span> {req.reason}
+          )}
+
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-purple-600 to-indigo-600 text-white flex items-center justify-center font-bold text-sm shadow-sm shrink-0">
+            {req.user?.full_name?.charAt(0) || 'ผ'}
+          </div>
+
+          <div className="flex-1 min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h4 className="text-sm font-bold text-gray-900 truncate">
+                {req.user?.full_name}
+              </h4>
+              <span className="text-[11px] px-2 py-0.5 rounded-md bg-gray-100 text-gray-600 font-medium">
+                {req.user?.position || 'บุคลากร'}
+              </span>
+            </div>
+
+            <div className="mt-2 text-xs text-gray-700 bg-gray-50/80 border border-gray-100 rounded-lg p-2.5">
+              <span className="font-semibold text-gray-900">งานที่ปฏิบัติ: </span>
+              {req.reason}
               {req.certification_note && (
-                <div className="mt-2 pt-2 border-t border-gray-200 text-amber-700 whitespace-pre-line">
-                  {req.certification_note}
+                <div className="mt-1.5 pt-1.5 border-t border-amber-200 text-amber-700 font-medium">
+                  หมายเหตุเพิ่มเติม: {req.certification_note}
                 </div>
               )}
             </div>
           </div>
-          <div className="flex flex-col items-end gap-1 shrink-0 ml-4">
-            <div className="text-sm font-medium text-gray-900">
-              {`${format(new Date(req.start_time), 'dd MMM', { locale: th })} ${new Date(req.start_time).getFullYear() + 543}`} 
+        </div>
+
+        {/* Center / Right: Time details + Actions */}
+        <div className="flex flex-col sm:flex-row md:flex-col lg:flex-row items-start sm:items-center md:items-end lg:items-center gap-3 shrink-0 w-full md:w-auto justify-between md:justify-end pt-2 md:pt-0 border-t md:border-t-0 border-gray-100">
+          <div className="text-left md:text-right">
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-800">
+              <Calendar className="w-3.5 h-3.5 text-purple-600" />
+              <span>{thaiDateStr}</span>
             </div>
             
-            <div className="flex flex-col items-end gap-1 justify-end w-full">
-              <div className="text-xs text-gray-500">
-                เวลาที่ขอ: {format(new Date(req.start_time), 'HH:mm')} - {format(new Date(req.end_time), 'HH:mm')} น. ({req.total_hours} ชม.)
-              </div>
-              {req.is_worked === false ? (
-                <div className="text-xs text-red-600 font-medium">ไม่ได้ปฏิบัติงาน (0 ชม.)</div>
-              ) : (req.actual_start_time && req.actual_end_time) ? (
-                <div className="text-xs text-blue-600 font-medium">
-                  ทำจริง: {format(new Date(req.actual_start_time), 'HH:mm')} - {format(new Date(req.actual_end_time), 'HH:mm')} น. ({req.actual_total_hours} ชม.)
-                </div>
-              ) : null}
+            <div className="mt-1 text-xs text-gray-500">
+              ขอไว้: {format(new Date(req.start_time), 'HH:mm')} - {format(new Date(req.end_time), 'HH:mm')} น. ({req.total_hours} ชม.)
             </div>
 
-            {activeTab === 'history' && (
-              <div className="flex items-center gap-2 justify-end w-full mt-1">
-                <div>
-                  {req.certification_step === -1 ? (
-                    <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium border bg-red-50 text-red-700 border-red-200">ไม่อนุมัติ</span>
-                  ) : req.is_certified ? (
-                    <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium border bg-emerald-50 text-emerald-700 border-emerald-200">รับรองแล้ว</span>
-                  ) : req.certification_note && !req.is_certified ? (
-                    <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium border bg-blue-50 text-blue-700 border-blue-200">ปรับปรุงเวลา</span>
-                  ) : (
-                    <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium border bg-amber-50 text-amber-700 border-amber-200">รอรับรอง</span>
-                  )}
-                </div>
+            {req.is_worked === false ? (
+              <div className="text-xs text-rose-600 font-bold mt-0.5">ไม่ได้ปฏิบัติงาน (0 ชม.)</div>
+            ) : (req.actual_start_time && req.actual_end_time) ? (
+              <div className="text-xs text-blue-700 font-bold mt-0.5">
+                เวลาทำจริง: {format(new Date(req.actual_start_time), 'HH:mm')} - {format(new Date(req.actual_end_time), 'HH:mm')} น. ({req.actual_total_hours} ชม.)
+              </div>
+            ) : null}
+
+            {isHistory && (
+              <div className="mt-1.5 flex items-center justify-end">
+                <span className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+                  req.is_certified 
+                    ? 'bg-emerald-100 text-emerald-800' 
+                    : req.certification_step === -1 
+                    ? 'bg-rose-100 text-rose-800'
+                    : 'bg-amber-100 text-amber-800'
+                }`}>
+                  {req.is_certified ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> : <AlertCircle className="w-3.5 h-3.5 text-amber-600" />}
+                  {req.is_certified ? 'รับรองเรียบร้อย' : req.certification_step === -1 ? 'ไม่อนุมัติ' : 'รอรับรอง'}
+                </span>
               </div>
             )}
           </div>
-        </div>
 
-        <div className="flex gap-2 xl:ml-4 shrink-0">
-          {!isHistory && userRole === 'supervisor' && req.certification_step === 0 && (
-            <div className="flex gap-2">
-              <button
-                onClick={() => handleSupervisorCertify(req, 'certify')}
-                disabled={isProcessing}
-                className="px-3 py-1.5 bg-emerald-600 text-white text-xs font-medium rounded hover:bg-emerald-700 disabled:opacity-50"
-              >
-                รับรองเวลา
-              </button>
-              <button
-                onClick={() => handleSupervisorCertify(req, 'adjust')}
-                disabled={isProcessing}
-                className="px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded hover:bg-blue-700 disabled:opacity-50"
-              >
-                แก้ไขเวลา
-              </button>
-              <button
-                onClick={() => handleSupervisorCertify(req, 'not_worked')}
-                disabled={isProcessing}
-                className="px-3 py-1.5 bg-gray-100 text-gray-700 text-xs font-medium rounded border border-gray-200 hover:bg-gray-200 disabled:opacity-50"
-              >
-                ไม่ได้ปฏิบัติงาน
-              </button>
-            </div>
-          )}
+          {/* Action Buttons */}
+          <div className="flex items-center gap-2">
+            {!isHistory && userRole === 'supervisor' && req.certification_step === 0 && (
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={() => handleSupervisorCertify(req, 'certify')}
+                  disabled={isProcessing}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-semibold rounded-xl shadow-sm transition-all disabled:opacity-50"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>รับรองเวลา</span>
+                </button>
+                <button
+                  onClick={() => handleSupervisorCertify(req, 'adjust')}
+                  disabled={isProcessing}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-semibold rounded-xl transition-all disabled:opacity-50"
+                >
+                  <Edit3 className="w-3.5 h-3.5" />
+                  <span>แก้ไขเวลา</span>
+                </button>
+                <button
+                  onClick={() => handleSupervisorCertify(req, 'not_worked')}
+                  disabled={isProcessing}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-semibold rounded-xl transition-all disabled:opacity-50"
+                >
+                  <XCircle className="w-3.5 h-3.5" />
+                  <span>ไม่มาทำ</span>
+                </button>
+              </div>
+            )}
 
-          {!isHistory && ['director', 'executive', 'super_admin', 'sub_admin'].includes(userRole || '') && req.certification_step === 1 && (
-            <div className="flex gap-2">
-              <button
-                onClick={() => handleDirectorReview(req.id, 'approve')}
-                disabled={isProcessing}
-                className="px-3 py-1.5 bg-emerald-600 text-white text-xs font-medium rounded hover:bg-emerald-700 disabled:opacity-50 flex items-center gap-1"
-              >
-                <CheckCircle className="w-3.5 h-3.5" /> อนุมัติรับรอง
-              </button>
-              <button
-                onClick={() => handleDirectorReview(req.id, 'revise')}
-                disabled={isProcessing}
-                className="px-3 py-1.5 bg-amber-100 text-amber-700 text-xs font-medium rounded border border-amber-200 hover:bg-amber-200 disabled:opacity-50 flex items-center gap-1"
-              >
-                <Edit2 className="w-3.5 h-3.5" /> ให้แก้ไข
-              </button>
-              <button
-                onClick={() => handleDirectorReview(req.id, 'reject')}
-                disabled={isProcessing}
-                className="px-3 py-1.5 bg-red-100 text-red-700 text-xs font-medium rounded border border-red-200 hover:bg-red-200 disabled:opacity-50 flex items-center gap-1"
-              >
-                <XCircle className="w-3.5 h-3.5" /> ไม่อนุมัติ
-              </button>
-            </div>
-          )}
+            {!isHistory && ['director', 'executive', 'super_admin', 'sub_admin'].includes(userRole || '') && req.certification_step === 1 && (
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={() => handleDirectorReview(req.id, 'approve')}
+                  disabled={isProcessing}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 text-white text-xs font-semibold rounded-xl shadow-sm hover:from-emerald-500 hover:to-teal-500 disabled:opacity-50"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5" /> อนุมัติรับรอง
+                </button>
+                <button
+                  onClick={() => handleDirectorReview(req.id, 'revise')}
+                  disabled={isProcessing}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100 text-xs font-semibold rounded-xl disabled:opacity-50"
+                >
+                  <Edit3 className="w-3.5 h-3.5" /> ให้แก้ไข
+                </button>
+                <button
+                  onClick={() => handleDirectorReview(req.id, 'reject')}
+                  disabled={isProcessing}
+                  className="inline-flex items-center gap-1 px-3 py-1.5 bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100 text-xs font-semibold rounded-xl disabled:opacity-50"
+                >
+                  <XCircle className="w-3.5 h-3.5" /> ไม่อนุมัติ
+                </button>
+              </div>
+            )}
+          </div>
         </div>
       </div>
     )
   }
 
   return (
-    <div className="bg-white border border-gray-100 rounded-xl shadow-sm min-h-[600px] flex flex-col">
-      {/* Sub-Tabs */}
-      <div className="flex items-center justify-between border-b border-gray-100 px-6 py-3 bg-gray-50/50">
-        <div className="flex items-center">
+    <div className="space-y-4">
+      {/* Sub-Tabs & Bulk Header */}
+      <div className="glass-panel p-4 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="flex items-center gap-2">
           <button
-            onClick={() => setActiveTab('pending')}
-            className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${activeTab === 'pending' ? 'bg-primary text-white shadow-sm' : 'text-gray-600 hover:bg-gray-100'}`}
+            onClick={() => { setActiveTab('pending'); setSelectedIds(new Set()); }}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+              activeTab === 'pending'
+                ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md shadow-purple-600/20'
+                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100/70'
+            }`}
           >
-            รอรับรอง ({requests.length})
+            <Clock className="w-3.5 h-3.5" />
+            <span>รอรับรอง ({requests.length})</span>
           </button>
           <button
-            onClick={() => setActiveTab('history')}
-            className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ml-2 ${activeTab === 'history' ? 'bg-primary text-white shadow-sm' : 'text-gray-600 hover:bg-gray-100'}`}
+            onClick={() => { setActiveTab('history'); setSelectedIds(new Set()); }}
+            className={`flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all ${
+              activeTab === 'history'
+                ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-md shadow-purple-600/20'
+                : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100/70'
+            }`}
           >
-            ประวัติการรับรอง ({historyRequests.length})
+            <CheckCheck className="w-3.5 h-3.5" />
+            <span>ประวัติการรับรอง ({historyRequests.length})</span>
           </button>
         </div>
         
         {activeTab === 'pending' && requests.length > 0 && (
-          <div className="flex items-center gap-3">
-            <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
-              <input type="checkbox" checked={selectedIds.size === requests.length && requests.length > 0} onChange={handleSelectAll} className="rounded text-primary focus:ring-primary w-4 h-4" />
-              เลือกทั้งหมด
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="inline-flex items-center gap-2 px-3 py-1.5 bg-white/80 border border-gray-200/80 rounded-xl text-xs font-semibold text-gray-700 cursor-pointer hover:bg-gray-50 shadow-sm select-none">
+              <input 
+                type="checkbox" 
+                checked={selectedIds.size === requests.length && requests.length > 0} 
+                onChange={handleSelectAll} 
+                className="w-4 h-4 text-purple-600 border-gray-300 rounded focus:ring-purple-500" 
+              />
+              <span>เลือกทั้งหมด ({requests.length})</span>
             </label>
-            <div className="flex items-center gap-2 pl-3 border-l border-gray-300">
-              <button onClick={() => handleBulkAction('certify')} disabled={isBulkProcessing || selectedIds.size === 0} className="px-3 py-1.5 bg-primary text-white text-xs font-medium rounded hover:bg-primary-dark disabled:opacity-50">รับรองที่เลือก</button>
-              {['director', 'executive', 'super_admin', 'sub_admin'].includes(userRole || '') ? (
-                <>
-                  <button onClick={() => handleBulkAction('revise')} disabled={isBulkProcessing || selectedIds.size === 0} className="px-3 py-1.5 bg-amber-100 text-amber-700 text-xs font-medium rounded border border-amber-200 hover:bg-amber-200 disabled:opacity-50">แจ้งแก้ไขที่เลือก</button>
-                  <button onClick={() => handleBulkAction('reject')} disabled={isBulkProcessing || selectedIds.size === 0} className="px-3 py-1.5 bg-red-100 text-red-700 text-xs font-medium rounded border border-red-200 hover:bg-red-200 disabled:opacity-50">ปฏิเสธการรับรองที่เลือก</button>
-                </>
-              ) : (
-                <button onClick={() => handleBulkAction('not_worked')} disabled={isBulkProcessing || selectedIds.size === 0} className="px-3 py-1.5 bg-gray-100 text-gray-700 text-xs font-medium rounded border border-gray-200 hover:bg-gray-200 disabled:opacity-50">ไม่ได้ปฏิบัติงานที่เลือก</button>
-              )}
-            </div>
+
+            {selectedIds.size > 0 && (
+              <div className="flex items-center gap-2 animate-fadeIn">
+                <button 
+                  onClick={() => handleBulkAction('certify')} 
+                  disabled={isBulkProcessing} 
+                  className="px-3.5 py-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white text-xs font-semibold rounded-xl shadow-md shadow-purple-600/20 disabled:opacity-50"
+                >
+                  รับรองที่เลือก ({selectedIds.size})
+                </button>
+                {['director', 'executive', 'super_admin', 'sub_admin'].includes(userRole || '') ? (
+                  <>
+                    <button 
+                      onClick={() => handleBulkAction('revise')} 
+                      disabled={isBulkProcessing} 
+                      className="px-3 py-1.5 bg-amber-50 text-amber-700 text-xs font-semibold rounded-xl border border-amber-200 hover:bg-amber-100 disabled:opacity-50"
+                    >
+                      แจ้งแก้ไข
+                    </button>
+                    <button 
+                      onClick={() => handleBulkAction('reject')} 
+                      disabled={isBulkProcessing} 
+                      className="px-3 py-1.5 bg-rose-50 text-rose-700 text-xs font-semibold rounded-xl border border-rose-200 hover:bg-rose-100 disabled:opacity-50"
+                    >
+                      ไม่อนุมัติ
+                    </button>
+                  </>
+                ) : (
+                  <button 
+                    onClick={() => handleBulkAction('not_worked')} 
+                    disabled={isBulkProcessing} 
+                    className="px-3 py-1.5 bg-gray-100 text-gray-700 text-xs font-semibold rounded-xl border border-gray-200 hover:bg-gray-200 disabled:opacity-50"
+                  >
+                    ไม่ได้ปฏิบัติงาน
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>
 
-      <div className="flex-1">
+      {/* Main List Section */}
+      <div className="space-y-4">
         {currentRequests.length === 0 ? (
-          <div className="py-12 text-center text-gray-500">
-            {activeTab === 'pending' ? 'ไม่มีรายการค้างรับรอง' : 'ไม่มีประวัติการรับรอง'}
+          <div className="glass-panel p-12 text-center rounded-2xl">
+            <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-purple-50 flex items-center justify-center text-purple-600">
+              <UserCheck className="w-8 h-8" />
+            </div>
+            <h3 className="text-base font-bold text-gray-800">
+              {activeTab === 'pending' ? 'ไม่มีรายการค้างรับรองผลการปฏิบัติงาน' : 'ไม่มีประวัติการรับรองผลการปฏิบัติงาน'}
+            </h3>
+            <p className="text-xs text-gray-500 mt-1 max-w-sm mx-auto">
+              ระบบจะแสดงรายการที่ได้รับการอนุมัติ OT และครบกำหนดเวลาปฏิบัติงานเพื่อรอการรับรอง
+            </p>
           </div>
         ) : (
-          <div className="divide-y divide-gray-100">
-            {Object.entries(groupedRequests).map(([divName, groupsMap]) => {
-              const divNodeId = `div-${divName}`
-              const isDivExpanded = !expandedNodes.has(divNodeId) // Expanded by default
+          Object.entries(groupedRequests).map(([divName, groupsMap]) => {
+            const divNodeId = `div-${divName}`
+            const isDivExpanded = !expandedNodes.has(divNodeId)
 
-              return (
-                <div key={divNodeId} className="bg-white">
-                  {/* Division Header */}
-                  <div 
-                    onClick={() => toggleNode(divNodeId)}
-                    className="flex items-center p-4 bg-gray-50/80 hover:bg-gray-100/80 cursor-pointer select-none transition-colors border-b border-gray-100"
-                  >
-                    {isDivExpanded ? <ChevronDown className="w-5 h-5 text-gray-400 mr-2" /> : <ChevronRight className="w-5 h-5 text-gray-400 mr-2" />}
-                    <div className="w-8 h-8 rounded-lg bg-white shadow-sm flex items-center justify-center mr-3 border border-gray-200">
-                      <span className="text-primary font-bold text-sm">
-                        {divName.charAt(0)}
-                      </span>
+            return (
+              <div key={divNodeId} className="glass-panel rounded-2xl overflow-hidden border border-gray-200/80 shadow-sm">
+                {/* Division Header */}
+                <div 
+                  onClick={() => toggleNode(divNodeId)}
+                  className="flex items-center justify-between p-4 bg-gradient-to-r from-purple-50/50 via-slate-50 to-white hover:from-purple-50/70 cursor-pointer select-none transition-colors border-b border-gray-100"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-lg bg-purple-100 text-purple-700 flex items-center justify-center font-bold text-xs shrink-0">
+                      <Building2 className="w-4 h-4" />
                     </div>
-                    <div>
-                      <h3 className="font-semibold text-gray-900">{divName}</h3>
-                    </div>
+                    <span className="font-bold text-gray-900 text-sm md:text-base">{divName}</span>
                   </div>
-
-                  {/* Groups */}
-                  {isDivExpanded && (
-                    <div className="divide-y divide-gray-50 border-t border-gray-100 bg-white">
-                      {Object.entries(groupsMap).map(([groupName, reqs]) => {
-                        const groupNodeId = `group-${divName}-${groupName}`
-                        const isGroupExpanded = !expandedNodes.has(groupNodeId) // Expanded by default
-
-                        return (
-                          <div key={groupNodeId}>
-                            {/* Group Header */}
-                            <div 
-                              onClick={() => toggleNode(groupNodeId)}
-                              className="flex items-center justify-between p-3 pl-10 hover:bg-gray-50 cursor-pointer select-none transition-colors border-b border-gray-50"
-                            >
-                              <div className="flex items-center gap-2">
-                                {isGroupExpanded ? <ChevronDown className="w-4 h-4 text-gray-400" /> : <ChevronRight className="w-4 h-4 text-gray-400" />}
-                                <Users className="w-4 h-4 text-indigo-500" />
-                                <span className="font-medium text-gray-700">{groupName}</span>
-                                <span className="text-xs text-gray-400">({reqs.length} รายการ)</span>
-                              </div>
-                            </div>
-
-                            {/* Requests in Group */}
-                            {isGroupExpanded && (
-                              <ul className="divide-y divide-gray-50 border-t border-gray-50">
-                                {reqs.map(req => renderRequestCard(req, activeTab === 'history'))}
-                              </ul>
-                            )}
-                          </div>
-                        )
-                      })}
-                    </div>
-                  )}
+                  <div className="w-7 h-7 rounded-lg bg-gray-100 flex items-center justify-center text-gray-500">
+                    {isDivExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                  </div>
                 </div>
-              )
-            })}
-          </div>
+
+                {/* Groups Accordion */}
+                {isDivExpanded && (
+                  <div className="p-3 md:p-4 space-y-3 bg-slate-50/30">
+                    {Object.entries(groupsMap).map(([groupName, reqs]) => {
+                      const groupNodeId = `group-${divName}-${groupName}`
+                      const isGroupExpanded = !expandedNodes.has(groupNodeId)
+
+                      return (
+                        <div key={groupNodeId} className="bg-white rounded-xl border border-gray-200/70 overflow-hidden shadow-xs">
+                          {/* Group Header */}
+                          <div 
+                            onClick={() => toggleNode(groupNodeId)}
+                            className="flex items-center justify-between px-4 py-3 bg-gray-50/50 hover:bg-gray-100/50 cursor-pointer select-none transition-colors"
+                          >
+                            <div className="flex items-center gap-2.5">
+                              <Users className="w-4 h-4 text-purple-600" />
+                              <span className="font-semibold text-gray-800 text-xs md:text-sm">{groupName}</span>
+                              <span className="text-xs text-gray-400">({reqs.length} รายการ)</span>
+                            </div>
+                            {isGroupExpanded ? <ChevronDown className="w-3.5 h-3.5 text-gray-400" /> : <ChevronRight className="w-3.5 h-3.5 text-gray-400" />}
+                          </div>
+
+                          {/* Request List */}
+                          {isGroupExpanded && (
+                            <div className="divide-y divide-gray-100">
+                              {reqs.map(req => renderRequestCard(req, activeTab === 'history'))}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )
+          })
         )}
       </div>
 
       {/* Adjust Time Modal */}
       {adjustModalReq && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/50 backdrop-blur-sm">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-md overflow-hidden">
-            <div className="flex items-center justify-between p-4 border-b border-gray-100 bg-gray-50">
-              <h3 className="font-semibold text-gray-900">แก้ไขเวลาปฏิบัติงานจริง</h3>
-              <button onClick={() => setAdjustModalReq(null)} className="text-gray-400 hover:text-gray-600">
-                <X className="w-5 h-5" />
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-gray-900/60 backdrop-blur-sm animate-fadeIn">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden border border-gray-100 animate-scaleUp">
+            <div className="flex items-center justify-between p-5 border-b border-gray-100 bg-gradient-to-r from-blue-50/80 to-indigo-50/50">
+              <div className="flex items-center gap-2">
+                <Clock className="w-5 h-5 text-blue-600" />
+                <h3 className="font-bold text-gray-900">แก้ไขเวลาปฏิบัติงานจริง</h3>
+              </div>
+              <button 
+                onClick={() => setAdjustModalReq(null)} 
+                className="w-8 h-8 rounded-lg bg-white/80 hover:bg-gray-100 flex items-center justify-center text-gray-500 transition-colors"
+              >
+                <X className="w-4 h-4" />
               </button>
             </div>
             
-            <div className="p-6">
-              <div className="mb-4 p-3 bg-blue-50 rounded-lg border border-blue-100 text-sm text-blue-800">
-                <div className="font-medium mb-1">เวลาตามคำขอเดิม:</div>
+            <div className="p-6 space-y-5">
+              <div className="p-4 bg-blue-50/80 rounded-xl border border-blue-100 text-xs text-blue-900 space-y-1">
+                <div className="font-bold">เวลาตามคำขอเดิม:</div>
                 <div>{format(new Date(adjustModalReq.start_time), 'HH:mm')} - {format(new Date(adjustModalReq.end_time), 'HH:mm')} น. (รวม {adjustModalReq.total_hours} ชม.)</div>
+                <div className="text-blue-700 font-medium pt-1">ผู้ขอ: {adjustModalReq.user?.full_name}</div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4 mb-6">
+              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">เวลาเริ่มต้นจริง</label>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1.5">เวลาเริ่มต้นจริง</label>
                   <select 
                     value={adjustStart} 
                     onChange={e => setAdjustStart(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary outline-none"
+                    className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 outline-none bg-white shadow-xs"
                   >
                     {timeOptions.map(t => <option key={t} value={t}>{t} น.</option>)}
                   </select>
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">เวลาสิ้นสุดจริง</label>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1.5">เวลาสิ้นสุดจริง</label>
                   <select 
                     value={adjustEnd} 
                     onChange={e => setAdjustEnd(e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary outline-none"
+                    className="w-full px-3 py-2.5 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500 outline-none bg-white shadow-xs"
                   >
                     {timeOptions.map(t => <option key={t} value={t}>{t} น.</option>)}
                   </select>
                 </div>
               </div>
 
-              <div className="flex gap-3 justify-end">
+              <div className="flex gap-2.5 justify-end pt-2">
                 <button 
                   onClick={() => setAdjustModalReq(null)}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200"
+                  className="px-4 py-2 text-xs font-semibold text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-xl transition-colors"
                 >
                   ยกเลิก
                 </button>
                 <button 
                   onClick={handleAdjustSubmit}
                   disabled={processingId === adjustModalReq.id}
-                  className="px-4 py-2 text-sm font-medium text-white bg-primary rounded-lg hover:bg-primary-dark disabled:opacity-50"
+                  className="px-5 py-2 text-xs font-semibold text-white bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 rounded-xl shadow-md shadow-blue-500/20 disabled:opacity-50 transition-all"
                 >
                   {processingId === adjustModalReq.id ? 'กำลังบันทึก...' : 'บันทึกเวลาใหม่'}
                 </button>

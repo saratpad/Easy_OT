@@ -3,6 +3,7 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js'
 import ApproverClient from './ApproverClient'
 import { getSessionUser } from '@/app/actions/auth'
 import { format } from 'date-fns'
+import { getFiscalYearDateRange, getCurrentFiscalYear } from '@/utils/date'
 
 export default async function ApproverDashboard({
   searchParams,
@@ -43,7 +44,8 @@ export default async function ApproverDashboard({
 
   const monthQuery = (typeof resolvedSearchParams.month === 'string' ? resolvedSearchParams.month : '') || format(new Date(), 'yyyy-MM')
   
-  if (isAdmin) {
+  if (!userId.startsWith('mock-')) {
+    if (isAdmin) {
     // ADMIN FLOW: สามารถดูได้ทั้งหมด (super_admin) หรือทั้งกอง (sub_admin) แต่ทำอะไรไม่ได้
     // Fetch Pending
     let pendingQuery = supabaseAdmin
@@ -70,17 +72,25 @@ export default async function ApproverDashboard({
     }
 
     if (monthQuery !== 'all') {
-      const year = parseInt(monthQuery.split('-')[0])
-      const month = parseInt(monthQuery.split('-')[1])
-      const nextMonth = month === 12 ? 1 : month + 1
-      const nextYear = month === 12 ? year + 1 : year
-      
-      const startDate = `${year}-${month.toString().padStart(2, '0')}-01T00:00:00.000Z`
-      const endDate = `${nextYear}-${nextMonth.toString().padStart(2, '0')}-01T00:00:00.000Z`
-      
-      historyQuery = historyQuery.gte('updated_at', startDate).lt('updated_at', endDate)
+      if (monthQuery.startsWith('fy-')) {
+        const fy = monthQuery.replace('fy-', '')
+        const { startIso, endIso } = getFiscalYearDateRange(fy)
+        historyQuery = historyQuery.gte('updated_at', startIso).lt('updated_at', endIso)
+      } else {
+        const year = parseInt(monthQuery.split('-')[0])
+        const month = parseInt(monthQuery.split('-')[1])
+        const nextMonth = month === 12 ? 1 : month + 1
+        const nextYear = month === 12 ? year + 1 : year
+        
+        const startDate = `${year}-${month.toString().padStart(2, '0')}-01T00:00:00.000Z`
+        const endDate = `${nextYear}-${nextMonth.toString().padStart(2, '0')}-01T00:00:00.000Z`
+        
+        historyQuery = historyQuery.gte('updated_at', startDate).lt('updated_at', endDate)
+      }
     } else {
-      historyQuery = historyQuery.limit(100)
+      const oldestFY = getCurrentFiscalYear() - 4
+      const { startIso } = getFiscalYearDateRange(oldestFY)
+      historyQuery = historyQuery.gte('updated_at', startIso).limit(200)
     }
     
     const { data: adminHistory } = await historyQuery
@@ -173,17 +183,25 @@ export default async function ApproverDashboard({
       .order('acted_at', { ascending: false })
 
     if (monthQuery !== 'all') {
-      const year = parseInt(monthQuery.split('-')[0])
-      const month = parseInt(monthQuery.split('-')[1])
-      const nextMonth = month === 12 ? 1 : month + 1
-      const nextYear = month === 12 ? year + 1 : year
-      
-      const startDate = `${year}-${month.toString().padStart(2, '0')}-01T00:00:00.000Z`
-      const endDate = `${nextYear}-${nextMonth.toString().padStart(2, '0')}-01T00:00:00.000Z`
-      
-      historyQuery = historyQuery.gte('acted_at', startDate).lt('acted_at', endDate)
+      if (monthQuery.startsWith('fy-')) {
+        const fy = monthQuery.replace('fy-', '')
+        const { startIso, endIso } = getFiscalYearDateRange(fy)
+        historyQuery = historyQuery.gte('acted_at', startIso).lt('acted_at', endIso)
+      } else {
+        const year = parseInt(monthQuery.split('-')[0])
+        const month = parseInt(monthQuery.split('-')[1])
+        const nextMonth = month === 12 ? 1 : month + 1
+        const nextYear = month === 12 ? year + 1 : year
+        
+        const startDate = `${year}-${month.toString().padStart(2, '0')}-01T00:00:00.000Z`
+        const endDate = `${nextYear}-${nextMonth.toString().padStart(2, '0')}-01T00:00:00.000Z`
+        
+        historyQuery = historyQuery.gte('acted_at', startDate).lt('acted_at', endDate)
+      }
     } else {
-      historyQuery = historyQuery.limit(50)
+      const oldestFY = getCurrentFiscalYear() - 4
+      const { startIso } = getFiscalYearDateRange(oldestFY)
+      historyQuery = historyQuery.gte('acted_at', startIso).limit(100)
     }
 
     const { data: historyData } = await historyQuery
@@ -242,6 +260,100 @@ export default async function ApproverDashboard({
         certHistoryRequests = certHistData
       }
     }
+  }
+}
+
+  // Fallback sample data for demo preview if empty
+  if (userId.startsWith('mock-') && pendingRequests.length === 0) {
+    const today = new Date()
+    pendingRequests = [
+      {
+        id: 'mock-appr-1',
+        start_time: `${today.toISOString().split('T')[0]}T16:30:00+07:00`,
+        end_time: `${today.toISOString().split('T')[0]}T19:30:00+07:00`,
+        total_hours: 3.0,
+        reason: 'จัดเตรียมเอกสารการประชุมคณะกรรมการประสานงานยุทธศาสตร์และสรุปวาระ',
+        status: 'pending',
+        current_step: userRole === 'director' ? 2 : 1,
+        certification_step: 0,
+        is_worked: true,
+        user: { full_name: 'นางสาวสมหญิง ขยันดี', position: 'เจ้าพนักงานธุรการปฏิบัติงาน' },
+        division: { name: 'กองประสานนโยบายและยุทธศาสตร์' },
+        group: { name: 'กลุ่มประสานนโยบายและยุทธศาสตร์ ๑' }
+      },
+      {
+        id: 'mock-appr-2',
+        start_time: `${today.toISOString().split('T')[0]}T16:30:00+07:00`,
+        end_time: `${today.toISOString().split('T')[0]}T20:30:00+07:00`,
+        total_hours: 4.0,
+        reason: 'รวบรวมข้อมูลตัวชี้วัดความสำเร็จของแผนปฏิบัติราชการประจำปี 2569',
+        status: 'pending',
+        current_step: userRole === 'director' ? 2 : 1,
+        certification_step: 0,
+        is_worked: true,
+        user: { full_name: 'นายกิตติคุณ มุ่งมั่น', position: 'นักวิเคราะห์นโยบายและแผนปฏิบัติการ' },
+        division: { name: 'กองประสานนโยบายและยุทธศาสตร์' },
+        group: { name: 'กลุ่มประสานนโยบายและยุทธศาสตร์ ๑' }
+      },
+      {
+        id: 'mock-appr-3',
+        start_time: `${today.toISOString().split('T')[0]}T16:30:00+07:00`,
+        end_time: `${today.toISOString().split('T')[0]}T19:30:00+07:00`,
+        total_hours: 3.0,
+        reason: 'ตรวจทานรายงานการเงินและเบิกจ่ายงบประมาณโครงการเร่งด่วน',
+        status: 'pending',
+        current_step: userRole === 'director' ? 2 : 1,
+        certification_step: 0,
+        is_worked: true,
+        user: { full_name: 'นางสาวอรวรรณ ศรีสุข', position: 'เจ้าหน้าที่บริหารงานทั่วไป' },
+        division: { name: 'กองประสานนโยบายและยุทธศาสตร์' },
+        group: { name: 'ฝ่ายบริหารทั่วไป' }
+      }
+    ]
+  }
+
+  if (userId.startsWith('mock-') && historyRequests.length === 0) {
+    const yesterday = new Date(Date.now() - 86400000)
+    historyRequests = [
+      {
+        id: 'mock-hist-1',
+        start_time: `${yesterday.toISOString().split('T')[0]}T16:30:00+07:00`,
+        end_time: `${yesterday.toISOString().split('T')[0]}T19:30:00+07:00`,
+        total_hours: 3.0,
+        reason: 'สรุปรายงานผลการประชุมเพื่อนำเสนอผู้บริหาร',
+        status: 'approved',
+        current_step: 2,
+        certification_step: 1,
+        is_worked: true,
+        acted_at: yesterday.toISOString(),
+        user: { full_name: 'นางสาวสมหญิง ขยันดี', position: 'เจ้าพนักงานธุรการปฏิบัติงาน' },
+        division: { name: 'กองประสานนโยบายและยุทธศาสตร์' },
+        group: { name: 'กลุ่มประสานนโยบายและยุทธศาสตร์ ๑' }
+      }
+    ]
+  }
+
+  if (userId.startsWith('mock-') && certificationRequests.length === 0) {
+    const today = new Date()
+    certificationRequests = [
+      {
+        id: 'mock-cert-1',
+        start_time: `${today.toISOString().split('T')[0]}T16:30:00+07:00`,
+        end_time: `${today.toISOString().split('T')[0]}T19:30:00+07:00`,
+        total_hours: 3.0,
+        actual_start_time: `${today.toISOString().split('T')[0]}T16:30:00+07:00`,
+        actual_end_time: `${today.toISOString().split('T')[0]}T19:30:00+07:00`,
+        actual_total_hours: 3.0,
+        reason: 'จัดเตรียมเอกสารการประชุมคณะกรรมการประสานงานยุทธศาสตร์และสรุปวาระ',
+        status: 'approved',
+        certification_step: userRole === 'director' ? 1 : 0,
+        is_certified: false,
+        is_worked: true,
+        user: { full_name: 'นางสาวสมหญิง ขยันดี', position: 'เจ้าพนักงานธุรการปฏิบัติงาน' },
+        division: { name: 'กองประสานนโยบายและยุทธศาสตร์' },
+        group: { name: 'กลุ่มประสานนโยบายและยุทธศาสตร์ ๑' }
+      }
+    ]
   }
 
   return (

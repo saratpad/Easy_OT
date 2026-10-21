@@ -12,17 +12,20 @@ export default function LogoutButton({ compact = false }: LogoutButtonProps) {
   const router = useRouter()
 
   const handleLogout = async () => {
-    await logout()
-    router.push('/login')
-    router.refresh()
+    try {
+      await logout()
+    } finally {
+      window.location.href = '/login'
+    }
   }
 
   if (compact) {
     return (
       <button
         onClick={handleLogout}
-        className="p-1 text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors rounded-md"
+        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition-all rounded-xl active:scale-95"
         title="ออกจากระบบ"
+        aria-label="ออกจากระบบ"
       >
         <LogOut className="w-4 h-4" />
       </button>
@@ -32,7 +35,7 @@ export default function LogoutButton({ compact = false }: LogoutButtonProps) {
   return (
     <button
       onClick={handleLogout}
-      className="flex items-center justify-center w-full px-4 py-2.5 text-sm font-medium text-red-600 bg-white border border-red-200 rounded-lg hover:bg-red-50 transition-colors"
+      className="flex items-center justify-center w-full px-4 py-2.5 text-xs sm:text-sm font-semibold text-rose-600 bg-rose-50/60 hover:bg-rose-100/70 border border-rose-200/60 rounded-xl transition-all shadow-sm active:scale-[0.99]"
     >
       <LogOut className="mr-2 w-4 h-4" />
       ออกจากระบบ

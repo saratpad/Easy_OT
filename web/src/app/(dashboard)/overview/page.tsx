@@ -46,7 +46,8 @@ export default async function OverviewPage(props: { searchParams: Promise<{ [key
     }
   }
 
-  const overviewData = await fetchOverviewData(effectiveDivisionId, effectiveGroupId)
+  const fiscalYearQuery = typeof searchParams.fiscal_year === 'string' ? searchParams.fiscal_year : undefined
+  const overviewData = await fetchOverviewData(effectiveDivisionId, effectiveGroupId, fiscalYearQuery)
 
   // Resolve scopeName for UI
   let scopeName = 'ระดับองค์กร (Organization)'
@@ -72,6 +73,7 @@ export default async function OverviewPage(props: { searchParams: Promise<{ [key
       selectedDivisionId={effectiveDivisionId || ''}
       selectedGroupId={effectiveGroupId || ''}
       scopeName={scopeName}
+      userDivisionId={user.division_id || undefined}
     />
   )
 }

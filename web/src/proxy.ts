@@ -10,6 +10,11 @@ const APPROVER_ROLES = ['supervisor', 'director', 'executive', 'super_admin', 's
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
 
+  // ─── Public routes (accessible by anyone, logged in or not) ────────────────
+  if (pathname.startsWith('/privacy')) {
+    return NextResponse.next()
+  }
+
   // Get session user ID from cookie
   const userId = request.cookies.get(SESSION_COOKIE_NAME)?.value
 
@@ -35,11 +40,13 @@ export async function proxy(request: NextRequest) {
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     )
-    const { data: user } = await supabase
-      .from('users')
-      .select('role')
-      .eq('id', userId)
-      .single()
+    const timeoutPromise = new Promise<{ data: null }>((_, reject) =>
+      setTimeout(() => reject(new Error('Proxy role timeout')), 1500)
+    )
+    const { data: user } = await Promise.race([
+      supabase.from('users').select('role').eq('id', userId).single(),
+      timeoutPromise
+    ]) as any
 
     role = user?.role ?? null
   } catch {

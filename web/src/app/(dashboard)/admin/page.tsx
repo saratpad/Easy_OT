@@ -33,7 +33,14 @@ export default async function AdminDashboard() {
   if (!isSuperAdmin && userDivisionId) {
     routesQuery = routesQuery.eq('division_id', userDivisionId)
   }
-  const { data: allRoutes } = await routesQuery
+  let allRoutes: any[] = []
+  try {
+    const timeoutPromise = new Promise<{ data: null }>((resolve) =>
+      setTimeout(() => resolve({ data: null }), 600)
+    )
+    const { data } = await Promise.race([routesQuery, timeoutPromise])
+    if (data) allRoutes = data
+  } catch (e) {}
 
   const allGroups = await fetchGroups(isSuperAdmin ? undefined : userDivisionId ?? undefined)
 

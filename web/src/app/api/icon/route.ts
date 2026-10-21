@@ -8,11 +8,13 @@ export async function GET(request: Request) {
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     )
     
-    // Fetch system settings
-    const { data: settings } = await supabaseAdmin.from('system_settings').select('setting_key, setting_value')
+    // Fetch system settings with 500ms timeout
+    const fetchPromise = supabaseAdmin.from('system_settings').select('setting_key, setting_value')
+    const timeoutPromise = new Promise<{ data: null }>((resolve) => setTimeout(() => resolve({ data: null }), 500))
+    const { data: settings } = await Promise.race([fetchPromise, timeoutPromise])
     const settingsMap: Record<string, string> = {}
     if (settings) {
-      settings.forEach(s => {
+      settings.forEach((s: any) => {
         settingsMap[s.setting_key] = s.setting_value
       })
     }
