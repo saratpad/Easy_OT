@@ -65,6 +65,12 @@ export type CompensationSummary = {
     payableHours: number
     amount: number
   }>
+  divisionCompensations: Record<string, {
+    divisionName: string
+    totalHours: number
+    payableHours: number
+    amount: number
+  }>
   monthlyCompensations: Record<string, {
     monthKey: string
     workdayAmount: number
@@ -158,10 +164,11 @@ export function calculateOTCompensation(
 
   const userCompensations: CompensationSummary['userCompensations'] = {}
   const groupCompensations: CompensationSummary['groupCompensations'] = {}
+  const divisionCompensations: CompensationSummary['divisionCompensations'] = {}
   const monthlyCompensations: CompensationSummary['monthlyCompensations'] = {}
 
   Object.values(dayBuckets).forEach((bucket) => {
-    const { isHoliday, rawHours, userId, userName, position, groupName, monthKey } = bucket
+    const { isHoliday, rawHours, userId, userName, position, groupName, divisionName, monthKey } = bucket
     const rate = isHoliday ? OT_RATES.HOLIDAY.ratePerHour : OT_RATES.WORKDAY.ratePerHour
     const maxDaily = isHoliday ? OT_RATES.HOLIDAY.maxHoursPerDay : OT_RATES.WORKDAY.maxHoursPerDay
 
@@ -218,6 +225,21 @@ export function calculateOTCompensation(
       groupCompensations[groupName].amount += amount
     }
 
+    // สรุปรายกอง
+    if (divisionName) {
+      if (!divisionCompensations[divisionName]) {
+        divisionCompensations[divisionName] = {
+          divisionName,
+          totalHours: 0,
+          payableHours: 0,
+          amount: 0,
+        }
+      }
+      divisionCompensations[divisionName].totalHours += rawHours
+      divisionCompensations[divisionName].payableHours += payableHours
+      divisionCompensations[divisionName].amount += amount
+    }
+
     // สรุปรายเดือน
     if (!monthlyCompensations[monthKey]) {
       monthlyCompensations[monthKey] = {
@@ -251,6 +273,7 @@ export function calculateOTCompensation(
     holidayMaxHours: OT_RATES.HOLIDAY.maxHoursPerDay,
     userCompensations,
     groupCompensations,
+    divisionCompensations,
     monthlyCompensations,
   }
 }

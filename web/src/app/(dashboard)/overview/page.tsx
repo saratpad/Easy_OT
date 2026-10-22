@@ -19,13 +19,17 @@ export default async function OverviewPage(props: { searchParams: Promise<{ [key
   let effectiveDivisionId: string | undefined = undefined
   let effectiveGroupId: string | undefined = undefined
 
-  let divisions: any[] = []
+  // ดึงรายการกองทั้งหมดเพื่อระบุชื่อขอบเขตและแสดงใน dropdown
+  const divisions = await fetchDivisions()
   let groups: any[] = []
 
   // Resolve scope based on role and searchParams
   if (role === 'supervisor') {
     effectiveDivisionId = user.division_id || undefined
     effectiveGroupId = user.group_id || undefined
+    if (effectiveDivisionId) {
+      groups = await fetchGroups(effectiveDivisionId)
+    }
   } else if (role === 'director' || role === 'sub_admin') {
     effectiveDivisionId = user.division_id || undefined
     effectiveGroupId = (searchParams.group_id as string) || undefined
@@ -38,8 +42,6 @@ export default async function OverviewPage(props: { searchParams: Promise<{ [key
     effectiveDivisionId = (searchParams.division_id as string) || undefined
     effectiveGroupId = (searchParams.group_id as string) || undefined
     
-    // Fetch all divisions
-    divisions = await fetchDivisions()
     // Fetch groups if a division is selected
     if (effectiveDivisionId) {
       groups = await fetchGroups(effectiveDivisionId)
@@ -49,19 +51,19 @@ export default async function OverviewPage(props: { searchParams: Promise<{ [key
   const fiscalYearQuery = typeof searchParams.fiscal_year === 'string' ? searchParams.fiscal_year : undefined
   const overviewData = await fetchOverviewData(effectiveDivisionId, effectiveGroupId, fiscalYearQuery)
 
-  // Resolve scopeName for UI
-  let scopeName = 'ระดับองค์กร (Organization)'
-  if (effectiveGroupId && groups.length > 0) {
-    const groupName = groups.find(g => g.id === effectiveGroupId)?.name || 'ไม่ทราบกลุ่ม'
-    scopeName = `ระดับกลุ่มงาน (${groupName})`
-  } else if (effectiveDivisionId && divisions.length > 0) {
-    const divName = divisions.find(d => d.id === effectiveDivisionId)?.name || 'ไม่ทราบกอง'
-    scopeName = `ระดับกอง (${divName})`
-  } else if (role === 'director' || role === 'sub_admin') {
-    // They are looking at their own division but divisions wasn't fetched
-    scopeName = 'ระดับกอง (Division)'
-  } else if (role === 'supervisor') {
-    scopeName = 'ระดับกลุ่มงาน (Group)'
+  // Resolve scopeName for UI accurately
+  const matchedDiv = divisions.find(d => d.id === effectiveDivisionId)
+  const matchedGroup = groups.find(g => g.id === effectiveGroupId)
+
+  let scopeName = 'ระดับองค์กร (ภาพรวมทุกกอง)'
+  if (effectiveGroupId && matchedGroup) {
+    scopeName = `ระดับกลุ่มงาน (${matchedGroup.name})`
+  } else if (effectiveGroupId) {
+    scopeName = 'ระดับกลุ่มงาน'
+  } else if (effectiveDivisionId && matchedDiv) {
+    scopeName = `ระดับกอง (${matchedDiv.name})`
+  } else if (effectiveDivisionId) {
+    scopeName = 'ระดับกอง'
   }
 
   return (

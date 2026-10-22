@@ -53,7 +53,7 @@ export type OverviewData = {
   deepInsights: {
     topUsers: { name: string, hours: number, compensation?: number }[]
     topGroups: { name: string, hours: number, compensation?: number }[]
-    topDivisions: { name: string, hours: number }[]
+    topDivisions: { name: string, hours: number, compensation?: number }[]
     topReasons: { reason: string, count: number }[]
     weekdayDistribution: { day: string, hours: number }[]
     timeOfDayDistribution: { time: string, hours: number }[]
@@ -103,7 +103,7 @@ export async function fetchOverviewData(
   try {
     const fetchPromise = query
     const timeoutPromise = new Promise<{ data: null; error: any }>((resolve) =>
-      setTimeout(() => resolve({ data: null, error: new Error('Timeout') }), 1500)
+      setTimeout(() => resolve({ data: null, error: new Error('Timeout') }), 8000)
     )
     const result = await Promise.race([fetchPromise, timeoutPromise])
     requests = result.data
@@ -127,8 +127,8 @@ export async function fetchOverviewData(
     ? { label: '5 ปีงบประมาณย้อนหลัง', rangeLabel: 'ข้อมูลย้อนหลัง 5 ปีตามระเบียบงานสารบรรณ' }
     : getFiscalYearDateRange(selectedFY)
 
-  // Fallback demo data if database is unreachable or empty
-  if (!requests || requests.length === 0) {
+  // Fallback demo data ONLY if database is completely unreachable AND no specific scope was requested
+  if (requests === null && !effectiveDivisionId && !effectiveGroupId) {
     const dummyFY = selectedFY === 'all' ? currentFY : selectedFY
     const months = getFiscalYearMonths(dummyFY)
 
@@ -157,6 +157,9 @@ export async function fetchOverviewData(
         'กลุ่มประสานนโยบายและยุทธศาสตร์ ๑': { groupName: 'กลุ่มประสานนโยบายและยุทธศาสตร์ ๑', totalHours: 60, payableHours: 60, amount: 3120 },
         'กลุ่มพัฒนาระบบเทคโนโลยีสารสนเทศ': { groupName: 'กลุ่มพัฒนาระบบเทคโนโลยีสารสนเทศ', totalHours: 45, payableHours: 45, amount: 2360 },
         'ฝ่ายบริหารทั่วไป': { groupName: 'ฝ่ายบริหารทั่วไป', totalHours: 23, payableHours: 23, amount: 1200 },
+      },
+      divisionCompensations: {
+        'กองประสานนโยบายและยุทธศาสตร์': { divisionName: 'กองประสานนโยบายและยุทธศาสตร์', totalHours: 128, payableHours: 128, amount: 6680 }
       },
       monthlyCompensations: {}
     }
@@ -212,7 +215,7 @@ export async function fetchOverviewData(
           { name: 'ฝ่ายบริหารทั่วไป', hours: 23, compensation: 1200 }
         ],
         topDivisions: [
-          { name: 'กองประสานนโยบายและยุทธศาสตร์', hours: 128 }
+          { name: 'กองประสานนโยบายและยุทธศาสตร์', hours: 128, compensation: 6680 }
         ],
         topReasons: [
           { reason: 'จัดเตรียมเอกสารการประชุมคณะกรรมการและสรุปวาระ', count: 14 },
@@ -243,6 +246,11 @@ export async function fetchOverviewData(
         averageDuration: 3.2
       }
     }
+  }
+
+  // If requests is null (e.g. query failed while filtering a specific scope), treat as empty array
+  if (!requests) {
+    requests = []
   }
 
   // 3. Filter requests by Fiscal Year
@@ -404,6 +412,12 @@ export async function fetchOverviewData(
   const dayNames = ['อาทิตย์', 'จันทร์', 'อังคาร', 'พุธ', 'พฤหัสบดี', 'ศุกร์', 'เสาร์']
   const timeMap: Record<string, number> = {}
 
+  // Reasons (รวบรวมจากทุกคำร้องในขอบเขตที่เลือก)
+  filteredRequests.forEach(r => {
+    const reason = r.reason || 'ไม่ระบุเหตุผล'
+    reasonMap[reason] = (reasonMap[reason] || 0) + 1
+  })
+
   approvedRequests.forEach(r => {
     const hours = getActualWorkedHours(r)
     if (hours <= 0) return
@@ -423,10 +437,6 @@ export async function fetchOverviewData(
     // Positions
     const positionName = (r.users as any)?.position || 'ไม่ระบุตำแหน่ง'
     positionMap[positionName] = (positionMap[positionName] || 0) + hours
-
-    // Reasons
-    const reason = r.reason || 'ไม่ระบุเหตุผล'
-    reasonMap[reason] = (reasonMap[reason] || 0) + 1
 
     const d = new Date(r.start_time)
     const thDate = new Date(d.getTime() + 7 * 60 * 60 * 1000)
@@ -479,7 +489,14 @@ export async function fetchOverviewData(
     .slice(0, 5)
 
   const topDivisions = Object.entries(divisionMap)
-    .map(([name, hours]) => ({ name, hours: Math.round(hours) }))
+    .map(([name, hours]) => {
+      const divComp = compensation.divisionCompensations?.[name]
+      return { 
+        name, 
+        hours: Math.round(hours),
+        compensation: divComp?.amount || 0 
+      }
+    })
     .sort((a, b) => b.hours - a.hours)
     .slice(0, 5)
 

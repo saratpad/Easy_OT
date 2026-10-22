@@ -27,7 +27,7 @@ export async function fetchAllUsers(divisionId?: string) {
     }
 
     const timeoutPromise = new Promise<{ data: null; error: any }>((resolve) =>
-      setTimeout(() => resolve({ data: null, error: new Error('Timeout') }), 800)
+      setTimeout(() => resolve({ data: null, error: new Error('Timeout') }), 5000)
     )
     const { data, error } = await Promise.race([query, timeoutPromise])
     if (error || !data) throw error || new Error('No data')
@@ -70,7 +70,7 @@ export async function fetchGroups(divisionId?: string) {
     }
 
     const timeoutPromise = new Promise<{ data: null; error: any }>((resolve) =>
-      setTimeout(() => resolve({ data: null, error: new Error('Timeout') }), 800)
+      setTimeout(() => resolve({ data: null, error: new Error('Timeout') }), 5000)
     )
     const { data, error } = await Promise.race([query, timeoutPromise])
     if (error || !data) throw error || new Error('No data')
@@ -133,7 +133,7 @@ export async function fetchDivisions(divisionId?: string) {
     }
 
     const timeoutPromise = new Promise<{ data: null; error: any }>((resolve) =>
-      setTimeout(() => resolve({ data: null, error: new Error('Timeout') }), 800)
+      setTimeout(() => resolve({ data: null, error: new Error('Timeout') }), 5000)
     )
     const { data, error } = await Promise.race([query, timeoutPromise])
     if (error || !data) throw error || new Error('No data')
